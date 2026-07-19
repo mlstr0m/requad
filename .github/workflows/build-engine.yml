@@ -23,11 +23,16 @@ jobs:
       matrix:
         include:
           - { os: macos-14,     tag: macos-arm64,
-              flags: "-Wno-missing-template-arg-list-after-template-kw" }
+              flags: "-Wno-missing-template-arg-list-after-template-kw",
+              cflags: "" }
           - { os: macos-13,     tag: macos-x64,
-              flags: "-Wno-missing-template-arg-list-after-template-kw" }
-          - { os: ubuntu-22.04, tag: linux-x64, flags: "" }
-          - { os: windows-2022, tag: windows-x64, flags: "" }
+              flags: "-Wno-missing-template-arg-list-after-template-kw",
+              cflags: "" }
+          - { os: ubuntu-22.04, tag: linux-x64, flags: "", cflags: "" }
+          # the bundled academic libs key their Windows paths on the WIN32
+          # macro, which MSVC does not define by itself
+          - { os: windows-2022, tag: windows-x64,
+              flags: "/DWIN32", cflags: "/DWIN32" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +52,8 @@ jobs:
           cd engine-src
           cmake . -B build -DSATSUMA_ENABLE_BLOSSOM5=0 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-                -DCMAKE_CXX_FLAGS="${{ matrix.flags }}"
+                -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" \
+                -DCMAKE_C_FLAGS="${{ matrix.cflags }}"
           cmake --build build -j4
 
       - name: Collect binaries
