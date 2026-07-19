@@ -32,7 +32,7 @@ jobs:
           # the bundled academic libs key their Windows paths on the WIN32
           # macro, which MSVC does not define by itself
           - { os: windows-2022, tag: windows-x64,
-              flags: "/DWIN32", cflags: "/DWIN32" }
+              flags: "-DWIN32", cflags: "-DWIN32" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
