@@ -30,4 +30,8 @@ paths_exclude_pattern = [
   "/patches/",
   "/docs/",
   "*.zip",
+  "/dist/",
+  "/artifacts/",
+  "blender-*/",
+  "*.tar.xz",
 ]

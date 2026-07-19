@@ -96,9 +96,12 @@ jobs:
 
       - name: Install Blender
         run: |
+          # install OUTSIDE the source dir: anything left inside would be
+          # swallowed into the extension zips (v1 CI shipped 796MB zips...)
+          cd "$RUNNER_TEMP"
           curl -fsSL "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz" -o blender.tar.xz
           tar xf blender.tar.xz
-          echo "$PWD/blender-${BLENDER_VERSION}-linux-x64" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/blender-${BLENDER_VERSION}-linux-x64" >> "$GITHUB_PATH"
 
       - name: Build extension (one zip per platform)
         run: |
