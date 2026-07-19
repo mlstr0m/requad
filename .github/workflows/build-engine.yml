@@ -60,8 +60,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p out/${{ matrix.tag }}
-          cp engine-src/build/Build/bin/quadwild* out/${{ matrix.tag }}/
-          cp engine-src/build/Build/bin/quad_from_patches* out/${{ matrix.tag }}/
+          # MSVC's multi-config generator nests binaries under Release/
+          for base in engine-src/build/Build/bin engine-src/build/Build/bin/Release; do
+            if ls "$base"/quadwild* >/dev/null 2>&1; then
+              cp "$base"/quadwild* "$base"/quad_from_patches* out/${{ matrix.tag }}/
+              break
+            fi
+          done
+          ls out/${{ matrix.tag }}/
 
       - uses: actions/upload-artifact@v4
         with:
