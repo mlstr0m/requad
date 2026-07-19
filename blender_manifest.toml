@@ -19,7 +19,7 @@ copyright = [
 ]
 
 # Bundled engine binaries — one build per platform, produced by CI.
-platforms = ["macos-arm64"]
+platforms = ["macos-arm64", "linux-x64", "windows-x64"]
 
 [build]
 paths_exclude_pattern = [

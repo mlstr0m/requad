@@ -25,9 +25,9 @@ jobs:
           - { os: macos-14,     tag: macos-arm64,
               flags: "-Wno-missing-template-arg-list-after-template-kw",
               cflags: "" }
-          - { os: macos-13,     tag: macos-x64,
-              flags: "-Wno-missing-template-arg-list-after-template-kw",
-              cflags: "" }
+          # macos-x64 dropped: Blender 5.0+ is Apple Silicon only (4.5 LTS
+          # was the last Intel build) and the macos-13 runners bottleneck
+          # every run. Re-add on demand for Blender <=4.5 LTS users.
           - { os: ubuntu-22.04, tag: linux-x64, flags: "", cflags: "" }
           # the bundled academic libs key their Windows paths on the WIN32
           # macro, which MSVC does not define by itself
