@@ -1,0 +1,64 @@
+diff --git a/libs/lemon/CMakeLists.txt b/libs/lemon/CMakeLists.txt
+index 4981231..115ccd8 100644
+--- a/libs/lemon/CMakeLists.txt
++++ b/libs/lemon/CMakeLists.txt
+@@ -1,7 +1,7 @@
+ CMAKE_MINIMUM_REQUIRED(VERSION 3.9)
+ 
+ IF(POLICY CMP0048) 
+-  CMAKE_POLICY(SET CMP0048 OLD) 
++  CMAKE_POLICY(SET CMP0048 NEW) 
+ ENDIF(POLICY CMP0048)
+ 
+ IF(POLICY CMP0043) 
+diff --git a/libs/vcglib/wrap/io_trimesh/import_ply.h b/libs/vcglib/wrap/io_trimesh/import_ply.h
+index 2da70ab4..9f503d34 100644
+--- a/libs/vcglib/wrap/io_trimesh/import_ply.h
++++ b/libs/vcglib/wrap/io_trimesh/import_ply.h
+@@ -1082,14 +1082,15 @@ public:
+ 	}
+ 
+ 
++#if 0 // dead code, does not compile with modern clang
+ 	// Caricamento camera da un ply
+ 	int LoadCamera(const char * filename)
+ 	{
+-		vcg::ply::PlyFile pf;
++		vcg::ply::PlyFile pf; PlyInfo pi;
+ 		if( pf.Open(filename,vcg::ply::PlyFile::MODE_READ)==-1 )
+ 		{
+-			this->pi.status = pf.GetError();
+-			return this->pi.status;
++			pi.status = pf.GetError();
++			return pi.status;
+ 		}
+ 
+ 
+@@ -1104,7 +1105,7 @@ public:
+ 		}
+ 
+ 		if(!found)
+-			return this->pi.status;
++			return pi.status;
+ 
+ 		for(size_t i=0;i<pf.elements.size();i++)
+ 		{
+@@ -1120,8 +1121,8 @@ public:
+ 				{
+ 					if( pf.Read( (void *)&(ca) )==-1 )
+ 					{
+-						this->pi.status = PlyInfo::E_SHORTFILE;
+-						return this->pi.status;
++						pi.status = PlyInfo::E_SHORTFILE;
++						return pi.status;
+ 					}
+ 					this->camera.valid     = true;
+ 					this->camera.view_p[0] = ca.view_px;
+@@ -1154,6 +1155,7 @@ public:
+ 
+ 		return 0;
+ 	}
++#endif
+ 
+ 
+ 	static bool LoadMask(const char * filename, int &mask)

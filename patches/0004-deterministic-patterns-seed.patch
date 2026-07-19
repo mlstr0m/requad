@@ -1,0 +1,17 @@
+diff --git a/libs/quadretopology/patterns/patterns/kt84/util.h b/libs/quadretopology/patterns/patterns/kt84/util.h
+index 3184189..2f6249c 100644
+--- a/libs/quadretopology/patterns/patterns/kt84/util.h
++++ b/libs/quadretopology/patterns/patterns/kt84/util.h
+@@ -112,7 +112,11 @@ namespace util {
+                p1.first == p2.second && p1.second == p2.first;
+     }
+     inline std::mt19937& random_engine() {
+-        static std::mt19937 engine(static_cast<unsigned int>(std::time(nullptr)));
++        // ReQuad: fixed seed — a time-based seed made every remesh of the
++        // same input produce a different quadrangulation (patch-fill
++        // topologies are sampled from this engine). Deterministic results
++        // are required for reproducible tooling.
++        static std::mt19937 engine(20260719u);
+         return engine;
+     }
+     template <typename T>

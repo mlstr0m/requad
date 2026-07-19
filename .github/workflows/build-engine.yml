@@ -1,0 +1,99 @@
+# Build the QuadWild bi-MDF engine binaries for every supported platform,
+# then package the Blender extension (one zip per platform).
+#
+# Engine source is pinned to a known-good commit and patched with patches/.
+
+name: build
+
+# Manual trigger only for now: the macOS runners bill at 10x on private
+# repos, so the 4-platform matrix must be launched deliberately
+# (Actions tab -> build -> Run workflow). Restore push/PR triggers when
+# the repository goes public (Actions are free there).
+on:
+  workflow_dispatch:
+
+env:
+  ENGINE_REPO: https://github.com/cgg-bern/quadwild-bimdf
+  ENGINE_COMMIT: cbda68e5deddf9d0e24c24382852f37a6eb2a630
+  BLENDER_VERSION: "4.2.0"
+
+jobs:
+  engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,     tag: macos-arm64 }
+          - { os: macos-13,     tag: macos-x64 }
+          - { os: ubuntu-22.04, tag: linux-x64 }
+          - { os: windows-2022, tag: windows-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch engine source
+        shell: bash
+        run: |
+          git clone --recursive "$ENGINE_REPO" engine-src
+          cd engine-src
+          git checkout "$ENGINE_COMMIT"
+          git submodule update --recursive
+          for p in ../patches/*.patch; do git apply "$p"; done
+
+      - name: Build
+        shell: bash
+        run: |
+          cd engine-src
+          cmake . -B build -DSATSUMA_ENABLE_BLOSSOM5=0 -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+                -DCMAKE_CXX_FLAGS="-Wno-missing-template-arg-list-after-template-kw"
+          cmake --build build -j4
+
+      - name: Collect binaries
+        shell: bash
+        run: |
+          mkdir -p out/${{ matrix.tag }}
+          cp engine-src/build/Build/bin/quadwild* out/${{ matrix.tag }}/
+          cp engine-src/build/Build/bin/quad_from_patches* out/${{ matrix.tag }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.tag }}
+          path: out/
+
+  extension:
+    needs: engine
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble engine folder
+        run: |
+          for d in artifacts/engine-*/*/; do
+            tag=$(basename "$d")
+            mkdir -p "engine/$tag"
+            cp "$d"* "engine/$tag/"
+            chmod +x "engine/$tag/"* || true
+          done
+          ls -R engine
+
+      - name: Install Blender
+        run: |
+          curl -fsSL "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz" -o blender.tar.xz
+          tar xf blender.tar.xz
+          echo "$PWD/blender-${BLENDER_VERSION}-linux-x64" >> "$GITHUB_PATH"
+
+      - name: Build extension (one zip per platform)
+        run: |
+          # platforms in the manifest must match the engine folders we ship
+          blender --command extension build --split-platforms \
+                  --source-dir . --output-dir dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: requad-extension
+          path: dist/*.zip

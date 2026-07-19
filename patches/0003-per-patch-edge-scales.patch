@@ -1,0 +1,36 @@
+diff --git a/components/quad_from_patches/main.cpp b/components/quad_from_patches/main.cpp
+index 24e6ce4..e07eedc 100644
+--- a/components/quad_from_patches/main.cpp
++++ b/components/quad_from_patches/main.cpp
+@@ -28,6 +28,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ #include <vcg/complex/algorithms/update/topology.h>
+ #include <vcg/complex/algorithms/update/bounding.h>
+ #include <stdio.h>
++#include <fstream>
+ //#include <QFileInfo>
+ //#include <QDir>
+ 
+@@ -203,7 +204,22 @@ int actual_main(int argc, char *argv[])
+     QuadRetopology::internal::updateAllMeshAttributes(trimesh);
+     double EdgeSize=avgEdge(trimesh)*scaleFactor;
+     std::cout<<"Edge Size "<<EdgeSize<<std::endl;
+-    const std::vector<double> edgeFactor(trimeshPartitions.size(), EdgeSize);
++    // ReQuad: optional per-patch edge-size multipliers ("<mesh>.scales", one
++    // float per patch) enable curvature-adaptive and painted density.
++    std::vector<double> edgeFactor(trimeshPartitions.size(), EdgeSize);
++    {
++        std::string scalesFilename = meshFilename;
++        scalesFilename.erase(scalesFilename.find_last_of("."));
++        scalesFilename += ".scales";
++        std::ifstream scalesFile(scalesFilename);
++        if (scalesFile) {
++            size_t i = 0;
++            double m;
++            while (i < edgeFactor.size() && scalesFile >> m)
++                edgeFactor[i++] *= m;
++            std::cout<<"Loaded "<<i<<" per-patch scale factors"<<std::endl;
++        }
++    }
+     auto qfp_result = qfp::quadrangulationFromPatches(trimesh, trimeshPartitions, trimeshCorners, edgeFactor, parameters, fixedChartClusters, quadmesh, quadmeshPartitions, quadmeshCorners, ilpResult);
+ 
+ 
