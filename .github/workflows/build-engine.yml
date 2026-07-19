@@ -102,9 +102,12 @@ jobs:
 
       - name: Build extension (one zip per platform)
         run: |
-          # platforms in the manifest must match the engine folders we ship
+          # platforms in the manifest must match the engine folders we ship;
+          # the extension builder does not create the output directory itself
+          mkdir -p dist
           blender --command extension build --split-platforms \
                   --source-dir . --output-dir dist
+          ls -lh dist/
 
       - uses: actions/upload-artifact@v4
         with:
