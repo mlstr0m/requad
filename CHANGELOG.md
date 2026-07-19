@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0 — 2026-07-19
+
+- **Multi-axis symmetry**: X/Y/Z toggles combine (half, quarter, eighth
+  remesh + cascaded mirror welds). Verified: zero asymmetric vertices on
+  X+Z, pure quads preserved.
+- **Curve guides**: Grease Pencil objects named “…guide…”/“…requad…”
+  become flow guides, and jagged marked bands now work too — guide
+  polylines attract nearby vertices during relaxation (tilted-ring
+  benchmark: mean distance 0.0004 vs 0.0113 unguided, 28× tighter). This
+  closes the previously documented zigzag limitation.
+- **Transfer Vertex Groups** (optional): weights projected onto the result
+  (gradient preserved 0.97 top / 0.02 bottom in the test).
+- **Modular code**: the monolithic add-on file is split into
+  `common.py` / `operator.py` / `__init__.py` (UI & registration).
+- CI: per-OS compiler flags (the clang-only warning flag no longer reaches
+  MSVC); automatic push/PR triggers restored for the public repository.
+
 ## 0.7.1 — 2026-07-19
 
 Professional review pass + beta-test battery (46 tests across 3 suites):

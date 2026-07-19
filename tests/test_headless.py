@@ -138,7 +138,7 @@ def main():
     fresh_suzanne()
     bpy.context.scene.requad.preset = "ORGANIC"
     bpy.context.scene.requad.target_count = 2000
-    bpy.context.scene.requad.symmetry_axis = "X"
+    bpy.context.scene.requad.sym_x = True
     result = bpy.ops.requad.remesh()
     res = next(o for o in bpy.context.scene.objects if o.name.endswith("_requad"))
     world = [res.matrix_world @ v.co for v in res.data.vertices]
@@ -171,7 +171,113 @@ def main():
           and quads == len(res.data.polygons) and seam_open == 0,
           f"(asym: {bad}/{len(world[::5])}, seam open edges: {seam_open}, "
           f"faces {len(res.data.polygons)})")
-    bpy.context.scene.requad.symmetry_axis = "NONE"
+    bpy.context.scene.requad.sym_x = False
+
+    # multi-axis symmetry: X+Z on a sphere must mirror on both planes
+    fresh_suzanne()
+    bpy.ops.wm.read_homefile(use_empty=True)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24)
+    bpy.context.scene.requad.preset = "ORGANIC"
+    bpy.context.scene.requad.target_count = 2000
+    bpy.context.scene.requad.sym_x = True
+    bpy.context.scene.requad.sym_z = True
+    result = bpy.ops.requad.remesh()
+    res = next(o for o in bpy.context.scene.objects if o.name.endswith("_requad"))
+    pts = [v.co.copy() for v in res.data.vertices]
+    size = max(res.dimensions)
+    kd2 = kdtree.KDTree(len(pts))
+    for i, co in enumerate(pts):
+        kd2.insert(co, i)
+    kd2.balance()
+    bad = 0
+    for co in pts[::5]:
+        for flip in ((-1, 1, 1), (1, 1, -1), (-1, 1, -1)):
+            m = co.copy()
+            m.x *= flip[0]
+            m.z *= flip[2]
+            _, _, d = kd2.find(m)
+            if d > size * 0.002:
+                bad += 1
+    quads2 = sum(1 for p in res.data.polygons if len(p.vertices) == 4)
+    check("multi-axis symmetry X+Z",
+          result == {"FINISHED"} and bad == 0
+          and quads2 == len(res.data.polygons),
+          f"(asym {bad}, faces {len(res.data.polygons)})")
+    bpy.context.scene.requad.sym_x = False
+    bpy.context.scene.requad.sym_z = False
+
+    # tilted guide ring (jagged marked band): guide attraction must trace
+    # it — this was the known limitation before curve-guide attraction
+    def tilted_ring_dist(guided):
+        import numpy as np
+        bpy.ops.wm.read_homefile(use_empty=True)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24)
+        ob = bpy.context.active_object
+        nrm = (0.6, 0.0, 0.8)
+        mids = []
+        for e in ob.data.edges:
+            va, vb = (ob.data.vertices[i].co for i in e.vertices)
+            if (abs(va.x * nrm[0] + va.z * nrm[2]) < 0.03
+                    and abs(vb.x * nrm[0] + vb.z * nrm[2]) < 0.03):
+                if guided:
+                    e.use_seam = True
+                mids.append(((va.x + vb.x) / 2, (va.y + vb.y) / 2,
+                             (va.z + vb.z) / 2))
+        bpy.context.scene.requad.preset = "ORGANIC"
+        bpy.context.scene.requad.target_count = 2000
+        bpy.context.scene.requad.guide_seams = guided
+        bpy.ops.requad.remesh()
+        res = next(o for o in bpy.context.scene.objects
+                   if o.name.endswith("_requad"))
+        me = res.data
+        vco = np.array([res.matrix_world @ v.co for v in me.vertices])
+        ev = np.empty(len(me.edges) * 2, dtype=np.int64)
+        me.edges.foreach_get("vertices", ev)
+        ev = ev.reshape(-1, 2)
+        a = vco[ev[:, 0]]
+        b = vco[ev[:, 1]]
+        ab = b - a
+        ab2 = np.maximum((ab * ab).sum(axis=1), 1e-12)
+        dists = []
+        for p in mids[:40]:
+            p = np.array(p)
+            t = (((p - a) * ab).sum(axis=1) / ab2).clip(0, 1)
+            dists.append(float(
+                np.linalg.norm(a + ab * t[:, None] - p, axis=1).min()))
+        return sum(dists) / len(dists)
+
+    unguided_d = tilted_ring_dist(False)
+    guided_d = tilted_ring_dist(True)
+    check("tilted guide traced", guided_d < unguided_d * 0.6,
+          f"(mean dist guided {guided_d:.4f} vs unguided {unguided_d:.4f})")
+    bpy.context.scene.requad.guide_seams = False
+
+    # vertex group transfer: gradient weights must survive re-projection
+    bpy.ops.wm.read_homefile(use_empty=True)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24)
+    ob = bpy.context.active_object
+    vg = ob.vertex_groups.new(name="grad")
+    for v in ob.data.vertices:
+        vg.add([v.index], max(0.0, min(1.0, v.co.z + 0.5)), "REPLACE")
+    bpy.context.scene.requad.preset = "ORGANIC"
+    bpy.context.scene.requad.target_count = 2000
+    bpy.context.scene.requad.transfer_weights = True
+    bpy.ops.requad.remesh()
+    res = next(o for o in bpy.context.scene.objects if o.name.endswith("_requad"))
+    ok = "grad" in res.vertex_groups
+    top_w = bot_w = 0.0
+    if ok:
+        gi = res.vertex_groups["grad"].index
+        tops = []
+        bots = []
+        for v in res.data.vertices:
+            w = next((g.weight for g in v.groups if g.group == gi), 0.0)
+            (tops if v.co.z > 0.3 else bots if v.co.z < -0.3 else []).append(w)
+        top_w = sum(tops) / max(len(tops), 1)
+        bot_w = sum(bots) / max(len(bots), 1)
+    check("vertex group transfer", ok and top_w > 0.7 and bot_w < 0.3,
+          f"(top {top_w:.2f}, bottom {bot_w:.2f})")
+    bpy.context.scene.requad.transfer_weights = False
 
     # paint density: red-painted half must get clearly smaller quads
     bpy.ops.wm.read_homefile(use_empty=True)

@@ -73,7 +73,7 @@ def main():
     mod.levels = 1
     bpy.ops.object.modifier_apply(modifier="s")
     ob.rotation_euler = (0.3, 0.2, 0.8)
-    result, res = remesh(ob, symmetry_axis="X")
+    result, res = remesh(ob, sym_x=True)
     # with symmetry the result inherits the source transform and its mesh
     # data lives in source-local space: local-frame mirror check
     local = [v.co.copy() for v in res.data.vertices]
@@ -91,7 +91,7 @@ def main():
             bad += 1
     check("rotated object local symmetry", result == {"FINISHED"} and bad == 0,
           f"(asym {bad}/{len(local[::7])})")
-    bpy.context.scene.requad.symmetry_axis = "NONE"
+    bpy.context.scene.requad.sym_x = False
 
     # 3-4. extreme object scales
     for radius, label in ((0.001, "tiny 1mm"), (500.0, "huge 500m")):

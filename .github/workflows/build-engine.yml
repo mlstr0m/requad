@@ -5,11 +5,10 @@
 
 name: build
 
-# Manual trigger only for now: the macOS runners bill at 10x on private
-# repos, so the 4-platform matrix must be launched deliberately
-# (Actions tab -> build -> Run workflow). Restore push/PR triggers when
-# the repository goes public (Actions are free there).
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 env:
@@ -23,10 +22,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14,     tag: macos-arm64 }
-          - { os: macos-13,     tag: macos-x64 }
-          - { os: ubuntu-22.04, tag: linux-x64 }
-          - { os: windows-2022, tag: windows-x64 }
+          - { os: macos-14,     tag: macos-arm64,
+              flags: "-Wno-missing-template-arg-list-after-template-kw" }
+          - { os: macos-13,     tag: macos-x64,
+              flags: "-Wno-missing-template-arg-list-after-template-kw" }
+          - { os: ubuntu-22.04, tag: linux-x64, flags: "" }
+          - { os: windows-2022, tag: windows-x64, flags: "" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +47,7 @@ jobs:
           cd engine-src
           cmake . -B build -DSATSUMA_ENABLE_BLOSSOM5=0 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-                -DCMAKE_CXX_FLAGS="-Wno-missing-template-arg-list-after-template-kw"
+                -DCMAKE_CXX_FLAGS="${{ matrix.flags }}"
           cmake --build build -j4
 
       - name: Collect binaries
