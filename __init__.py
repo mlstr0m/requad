@@ -14,10 +14,12 @@ import hashlib
 import math
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -491,7 +493,8 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             fs = f_sorted[bounds[pi]:bounds[pi + 1]]
             if not len(fs):
                 continue
-            vids = np.unique(fs)[:40]
+            uniq = np.unique(fs)
+            vids = uniq[::max(1, len(uniq) // 40)][:40]  # spatial spread
             total = 0.0
             for vid in vids:
                 _, i, _ = kd.find(verts[vid])
@@ -533,7 +536,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         return patches * MIN_QUADS_PER_PATCH
 
     def _start_qfp(self):
-        settings = bpy.context.scene.requad
+        settings = self.opts
         if self._qfp_runs == 0:
             self.floor_estimate = self._reachable_floor()
             self.qfp_scale = self._prepare_quantization(
@@ -573,7 +576,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             self.best_run, self.best_quads = self._qfp_runs, got
         if got:
             self.run_history.append((self.qfp_scale, got))
-        if context.scene.requad.adaptive_count:
+        if self.opts.adaptive_count:
             return False  # quality priority: keep the single-pass result
         if (not got
                 or self._qfp_runs >= 3
@@ -642,6 +645,10 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         tris = np.empty(len(mesh.polygons) * 3, dtype=np.int64)
         mesh.polygons.foreach_get("vertices", tris)
         tris = tris.reshape(-1, 3)
+        if matrix is not None and np.linalg.det(m[:3, :3]) < 0:
+            # negatively-scaled transforms flip the winding: un-flip it so
+            # the engine doesn't receive an inside-out mesh
+            tris = tris[:, ::-1].copy()
         return co, tris
 
     def _write_obj(self, co, tris):
@@ -981,7 +988,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             self.report({"WARNING"}, f"UV transfer failed: {exc}")
 
     def _finish(self, context):
-        settings = context.scene.requad
+        settings = self.opts
         suffix = "_quadrangulation_smooth.obj" if settings.smooth_result \
             else "_quadrangulation.obj"
         result = self.patches_obj[:-4] + f"_{self.best_run or 1}" + suffix
@@ -1048,9 +1055,24 @@ class REQUAD_OT_remesh(bpy.types.Operator):
 
     # ---- modal machinery ------------------------------------------------
 
+    SETTING_KEYS = (
+        "preset", "target_count", "count_mode", "sharp_angle",
+        "symmetry_axis", "use_paint_density", "adaptive_size",
+        "adaptive_count", "material_guides", "guide_sharp", "guide_seams",
+        "pre_remesh", "relax_iterations", "align_singularities",
+        "keep_materials", "transfer_uvs", "smooth_result", "hide_original")
+
     def execute(self, context):
         prefs = context.preferences.addons[__name__].preferences
-        settings = context.scene.requad
+        if context.window_manager.requad_progress >= 0:
+            self.report({"WARNING"}, "A ReQuad run is already in progress")
+            return {"CANCELLED"}
+        # Snapshot the settings: changing them mid-run must not affect a
+        # remesh that already started.
+        scene_settings = context.scene.requad
+        settings = SimpleNamespace(**{k: getattr(scene_settings, k)
+                                      for k in self.SETTING_KEYS})
+        self.opts = settings
         engine = resolve_engine(prefs)
         if engine is None:
             self.report({"ERROR"}, "QuadWild engine not found — check the "
@@ -1131,13 +1153,19 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         self._t0 = time.time()
         if cached and os.path.isfile(
                 os.path.join(cached, "input_rem_p0.obj")):
+            _STEP1_CACHE[key] = _STEP1_CACHE.pop(key)  # LRU refresh
             bpy.data.meshes.remove(export_mesh)
             self.workdir = cached
             self._set_workdir_paths()
             self.log_handle = open(self.log_path, "a")
             self.log_offset = os.path.getsize(self.log_path)
             self.progress = QFP_BASE - 2
-            self._start_qfp()
+            try:
+                self._start_qfp()
+            except OSError as exc:
+                self.log_handle.close()
+                self.report({"ERROR"}, f"Engine launch failed: {exc}")
+                return {"CANCELLED"}
         else:
             self.workdir = tempfile.mkdtemp(prefix="requad_")
             self._set_workdir_paths()
@@ -1155,15 +1183,22 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                 f.write(prep_content)
             self.log_handle = open(self.log_path, "w")
             while len(_STEP1_CACHE) >= _STEP1_CACHE_MAX:
-                _STEP1_CACHE.pop(next(iter(_STEP1_CACHE)))
+                evicted = _STEP1_CACHE.pop(next(iter(_STEP1_CACHE)))
+                shutil.rmtree(evicted, ignore_errors=True)
             _STEP1_CACHE[key] = self.workdir
-            self._start_quadwild()
+            try:
+                self._start_quadwild()
+            except OSError as exc:
+                self.log_handle.close()
+                self.report({"ERROR"}, f"Engine launch failed: {exc}")
+                return {"CANCELLED"}
 
         if bpy.app.background:
             return self._run_blocking(context)
 
         wm = context.window_manager
         wm.progress_begin(0, 100)
+        wm.requad_progress = max(self.progress, 0)  # double-run guard arms now
         self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
         return {"RUNNING_MODAL"}
@@ -1247,6 +1282,32 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         self.log_handle.close()
 
 
+class REQUAD_OT_set_count(bpy.types.Operator):
+    """Set Count relative to the active object's current polycount
+    (ZRemesher's Half / Same / Double)"""
+    bl_idname = "requad.set_count"
+    bl_label = "Set Count From Source"
+    bl_options = {"INTERNAL"}
+
+    factor: FloatProperty(default=1.0)
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.type == "MESH"
+
+    def execute(self, context):
+        s = context.scene.requad
+        me = context.active_object.data
+        tris = sum(len(p.vertices) - 2 for p in me.polygons)
+        quads_equiv = max(tris // 2, 1)
+        if s.count_mode == "TRIS":
+            s.target_count = max(int(2 * quads_equiv * self.factor), 100)
+        else:
+            s.target_count = max(int(quads_equiv * self.factor), 100)
+        return {"FINISHED"}
+
+
 class REQUAD_PT_panel(bpy.types.Panel):
     """One decision to make: how many quads. Everything else has defaults."""
     bl_label = "ReQuad"
@@ -1263,6 +1324,9 @@ class REQUAD_PT_panel(bpy.types.Panel):
         row = col.row(align=True)
         row.prop(settings, "target_count")
         row.prop(settings, "count_mode", text="")
+        row = col.row(align=True)
+        for label, factor in (("½", 0.5), ("Same", 1.0), ("×2", 2.0)):
+            row.operator("requad.set_count", text=label).factor = factor
         col.prop(settings, "symmetry_axis")
         col.separator()
         running = context.window_manager.requad_progress
@@ -1311,6 +1375,7 @@ classes = (
     ReQuadPreferences,
     ReQuadSettings,
     REQUAD_OT_remesh,
+    REQUAD_OT_set_count,
     REQUAD_PT_panel,
     REQUAD_PT_advanced,
 )

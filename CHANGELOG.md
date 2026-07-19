@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.1 — 2026-07-19
+
+Professional review pass + beta-test battery (46 tests across 3 suites):
+
+- **Fix**: negatively-scaled objects exported with inverted winding — the
+  engine received an inside-out mesh (verified: 100% outward normals now).
+- **Fix**: settings are snapshotted at launch — changing them during a
+  modal run no longer affects the remesh in flight.
+- **Fix**: a second invocation while a run is in progress is now refused
+  with a clear message (was: two concurrent runs fighting over the UI).
+- **Fix**: evicted field-cache workdirs are deleted from disk (up to
+  ~150 MB per dense-mesh run previously accumulated in TMPDIR); cache is
+  now LRU; engine-launch failures close the log handle cleanly.
+- Paint-density sampling spreads over each patch instead of taking the
+  first indices.
+- **New**: ½ / Same / ×2 buttons (ZRemesher parity) — Count relative to
+  the active object's polycount.
+- New `tests/test_beta.py`: 11 user-workflow cases (negative scale,
+  rotated+symmetry, 1mm and 500m scales, live modifiers, multi-user data,
+  chained remesh, shape keys, double-run, edit-mode poll, undo).
+
 ## 0.7.0 — 2026-07-19
 
 - **Hybrid Relax & Project**: each quad now also votes for its best-fit
