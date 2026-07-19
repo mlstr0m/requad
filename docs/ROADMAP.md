@@ -72,21 +72,22 @@ non bornée, désormais cappée à 100 tours — patch 0002).
    auto-intersections — réparation ou dégradation gracieuse avec message
    clair. *Gate : suite de 20 meshes pathologiques → 0 crash, 0 sortie vide
    silencieuse.*
-6b. **Déterminisme** : le traceur produit des layouts différents d'un run à
-   l'autre (mesuré : 2010 vs 2012 quads, et amplitude du paint variant de
-   0,29 à 0,70 sur input identique). Trouver et fixer la source (ordre de
-   hash, multithreading) pour des résultats reproductibles. *Gate : deux
-   runs identiques → même mesh au bit près.*
+6b. ✅ **Déterminisme** (livré 0.6.0) — la source était un mt19937 seedé à
+   l'heure système dans la bibliothèque de patterns (patch moteur 0004).
+   Gate atteint : deux runs identiques → même mesh au bit près, vérifié à
+   travers tout le pipeline Blender.
 7. 🟡 **Transfert d'attributs** : UVs livrés (0.5.0, data transfer par
    interpolation au polygone le plus proche — approximatif près des seams
    UV). Restent : vertex groups, shape keys.
 
 ## Phase 3 — Dépasser
 
-8. **Coarse extrême** : casser le plancher `~10 quads/patch` — fusion de
-   patches (metamesh collapse plus agressif) ou layout grossier calculé sur
-   un champ simplifié. C'est LE point où QuadWild est structurellement
-   derrière ZRemesher ; c'est aussi le plus risqué (R&D).
+8. ✅ **Coarse extrême** (largement débloqué en 0.6.0) — le levier était le
+   `alpha` du quantizer (0.005 → 0.3) : plancher ~10 → ~3,2 quads/patch,
+   ET meilleure qualité partout (statue 12,06° → 8,95° d'angle). Suzanne à
+   296 quads (ancien plancher : 663), ≥ 99 % quads après nettoyage des
+   arêtes dégénérées. Reste, pour aller sous ~3/patch : fusion de patches
+   (R&D connectivité).
 9. **Flow rectiligne sur zones plates** : lissage directionnel du champ dans
    les régions à faible courbure (la faiblesse visible sur le talkie).
 9b. **Qualité des angles au-delà de la relaxation** : mesuré (0.4.1) — le
