@@ -291,7 +291,7 @@ class ReQuadSettings(bpy.types.PropertyGroup):
                     "the source surface each step — straightens flow and "
                     "evens out quad shapes. On Basic/Mechanical, vertices "
                     "on sharp feature lines are pinned (0 disables)",
-        default=8, min=0, max=30,
+        default=12, min=0, max=30,
     )
     keep_materials: BoolProperty(
         name="Keep Materials",
@@ -801,6 +801,8 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         inv = np.linalg.inv(rot)
         world = co @ rot.T + tr
 
+        quads = np.array([list(p.vertices) for p in me.polygons
+                          if len(p.vertices) == 4], dtype=np.int64)
         degree = np.zeros(n)
         np.add.at(degree, edges[:, 0], 1.0)
         np.add.at(degree, edges[:, 1], 1.0)
@@ -810,11 +812,43 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         movable = ~fixed
         # keep the projection cost bounded on very dense results
         iterations = min(iterations, max(1, 500000 // max(n, 1)))
+        counts = np.zeros(n)
+        if len(quads):
+            np.add.at(counts, quads.reshape(-1), 1.0)
+        has_quad = counts > 0
+        counts = np.maximum(counts, 1.0)[:, None]
         for _ in range(iterations):
+            if not len(quads):
+                break
+            # Local-global "rectangle fitting": every quad votes for the
+            # corner positions of its best-fit rectangle (averaged edge
+            # axes, orthogonalized, lengths preserved); vertices average
+            # the votes. Drives corners toward 90° much more directly
+            # than plain Laplacian smoothing.
+            p = world[quads]                     # Q x 4 x 3
+            c = p.mean(axis=1)
+            eu = (p[:, 1] - p[:, 0] + p[:, 2] - p[:, 3]) * 0.5
+            ev = (p[:, 3] - p[:, 0] + p[:, 2] - p[:, 1]) * 0.5
+            lu = np.linalg.norm(eu, axis=1)
+            lv = np.linalg.norm(ev, axis=1)
+            u = eu / np.maximum(lu, 1e-12)[:, None]
+            ev_orth = ev - (ev * u).sum(axis=1)[:, None] * u
+            v = ev_orth / np.maximum(
+                np.linalg.norm(ev_orth, axis=1), 1e-12)[:, None]
+            hu = (u * lu[:, None]) * 0.5
+            hv = (v * lv[:, None]) * 0.5
+            targets = np.stack([c - hu - hv, c + hu - hv,
+                                c + hu + hv, c - hu + hv], axis=1)
             acc = np.zeros_like(world)
-            np.add.at(acc, edges[:, 0], world[edges[:, 1]])
-            np.add.at(acc, edges[:, 1], world[edges[:, 0]])
-            target = acc / degree
+            np.add.at(acc, quads.reshape(-1), targets.reshape(-1, 3))
+            rect_target = np.where(has_quad[:, None], acc / counts, world)
+            lap = np.zeros_like(world)
+            np.add.at(lap, edges[:, 0], world[edges[:, 1]])
+            np.add.at(lap, edges[:, 1], world[edges[:, 0]])
+            lap_target = lap / degree
+            # rectangles drive 90° corners, the Laplacian equalizes edge
+            # lengths — the blend beats either alone (measured)
+            target = 0.5 * rect_target + 0.5 * lap_target
             world[movable] += step * (target[movable] - world[movable])
             for i in np.nonzero(movable)[0]:
                 hit = bvh.find_nearest(Vector(world[i]))

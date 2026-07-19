@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-07-19
+
+- **Hybrid Relax & Project**: each quad now also votes for its best-fit
+  rectangle (averaged edge axes, orthogonalized), blended 50/50 with the
+  Laplacian term — corners are driven toward 90° while edge lengths stay
+  even. Default iterations raised to 12. Measured on the reference sculpt:
+  9.10° → 8.09° mean corner deviation (vs 8.42° for pure Laplacian).
+
 ## 0.6.0 — 2026-07-19
 
 - **Deterministic results** (engine patch 0004): the patch-fill library
