@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.11.2 — 2026-07-20
+
+Store-readiness release (extensions.blender.org submission):
+
+- Manifest declares the `files` permission (temp mesh export + running
+  the bundled engine) as required by the platform review.
+- Crash-proofing: no exception can reach the user as a raw traceback —
+  the modal handler turns anything unexpected into a clean cancel with
+  the engine-log path, and teardown can never leave the progress bar
+  stuck.
+- CI quality gate: every push now builds the three platform zips,
+  validates each one, and runs the full 49-test battery against the
+  freshly built Linux zip. A red gate blocks the release.
+- Reproduction-oriented issue template.
+
 ## 0.11.1 — 2026-07-20
 
 - **Singular diagonal collapses** (Organic): a quad whose diagonals read
