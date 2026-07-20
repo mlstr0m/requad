@@ -1,3 +1,9 @@
+> **SUPERSEDED** — cette campagne (2026-07-20, avant l'audit de
+> rigueur) contenait des biais méthodologiques documentés dans
+> `BENCHMARK_METHODOLOGY.md`. Elle est conservée comme trace de
+> l'audit ; les chiffres de référence sont dans
+> `BENCHMARK_VS_QUADREMESHER.md`.
+
 # Campagne comparative complète — ReQuad vs Quad Remesher 1.4.1
 
 36 runs (2026-07-20) : 9 formes × cibles 800/3000 × les deux outils, plus

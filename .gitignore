@@ -7,3 +7,6 @@ __pycache__/
 engine/macos-arm64/
 engine/linux-x64/
 engine/windows-x64/
+
+# maintainer-only working notes (announcement drafts, submission checklist)
+private/
