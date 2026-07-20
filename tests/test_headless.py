@@ -329,35 +329,37 @@ def main():
 
     # adaptive size: higher strength must spread quad sizes (flat caps get
     # bigger quads, the curved side smaller ones)
-    def cylinder_area_cv(adaptive):
+    def plateau_ratio(adaptive):
         # Mechanical ignores Adaptive Size by design (harms thin shells);
-        # measured on an Organic displaced terrain: bumps vs flat borders
-        # give a strong per-patch curvature contrast
+        # Organic case: a sphere with a flattened cap gives a deterministic
+        # zero-curvature plateau against the curved remainder
         bpy.ops.wm.read_homefile(use_empty=True)
-        bpy.ops.mesh.primitive_grid_add(x_subdivisions=128,
-                                        y_subdivisions=128, size=4)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24)
         ob = bpy.context.active_object
-        tex = bpy.data.textures.new("cvnoise", type="CLOUDS")
-        tex.noise_scale = 0.6
-        disp = ob.modifiers.new("d", "DISPLACE")
-        disp.texture = tex
-        disp.strength = 0.8
-        bpy.ops.object.modifier_apply(modifier="d")
+        for v in ob.data.vertices:
+            if v.co.z > 0.55:
+                v.co.z = 0.55
+        bpy.ops.object.modifier_add(type="TRIANGULATE")
+        bpy.ops.object.modifier_apply(modifier="Triangulate")
         bpy.context.scene.requad.preset = "ORGANIC"
-        bpy.context.scene.requad.target_count = 3000
+        bpy.context.scene.requad.target_count = 2000
         bpy.context.scene.requad.adaptive_size = adaptive
         bpy.ops.requad.remesh()
         ob = next(o for o in bpy.context.scene.objects
                   if o.name.endswith("_requad"))
-        areas = [p.area for p in ob.data.polygons]
-        mean = sum(areas) / len(areas)
-        var = sum((a - mean) ** 2 for a in areas) / len(areas)
-        return (var ** 0.5) / mean
+        plateau = []
+        rest = []
+        for p in ob.data.polygons:
+            (plateau if p.center.z > 0.53 else rest).append(p.area)
+        return ((sum(plateau) / max(len(plateau), 1))
+                / max(sum(rest) / max(len(rest), 1), 1e-12))
 
-    cv_uniform = cylinder_area_cv(0.0)
-    cv_adaptive = cylinder_area_cv(100.0)
-    check("adaptive size spreads quad sizes", cv_adaptive > cv_uniform * 1.15,
-          f"(cv {cv_uniform:.3f} -> {cv_adaptive:.3f})")
+    # the flat plateau must receive clearly bigger quads under adaptivity
+    r_uniform = plateau_ratio(0.0)
+    r_adaptive = plateau_ratio(100.0)
+    check("adaptive size spreads quad sizes",
+          r_adaptive > r_uniform * 1.2,
+          f"(plateau/rest area ratio {r_uniform:.2f} -> {r_adaptive:.2f})")
 
     # guides: a marked seam ring must attract the flow — measured RELATIVE
     # to an unguided run of the same shape, because the engine's tracing is

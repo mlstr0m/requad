@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0 — 2026-07-20
+
+Weak-point elimination round, driven by the full benchmark:
+
+- **Auto-skip pre-remesh** on clean organic-uniform inputs (sculpt-like
+  meshes): a lattice detector (repeated edge-length classes), CV band,
+  sliver and manifold guards decide safely. Wins measured: statue
+  10.5° → 7.7° AND 5.5 s → 2.1 s; Suzanne 8.24° → 7.68° — organic corner
+  angles now at parity with Quad Remesher (7.64°) at honest counts.
+  Structured lattices and dirty meshes keep the engine's remesh.
+- **Fixed inverted Adaptive Size near creases**: the per-patch normal-spread
+  proxy let a minority crease shrink whole flat plateaus (flattened-cap
+  sphere: plateau got 0.53× quads instead of bigger). New proxy: per-face
+  dihedral curvature aggregated as a per-patch median — plateau now
+  correctly gets 2.35× bigger quads.
+- Pipeline stage profiler built in (`REQUAD_PROFILE=1`): established that
+  Python-side overhead is < 0.1 s — remaining cold-start time is engine
+  compute.
+
+
 ## 0.8.1 — 2026-07-20
 
 Full comparative benchmark campaign (36 runs, 9 shapes, vs Quad Remesher

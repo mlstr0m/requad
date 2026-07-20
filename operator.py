@@ -55,6 +55,14 @@ class REQUAD_OT_remesh(bpy.types.Operator):
 
     # ---- pipeline steps -------------------------------------------------
 
+    def _mark(self, stage):
+        now = time.perf_counter()
+        last = getattr(self, "_mark_t", None)
+        if last is not None:
+            self.stage_times.append((self._mark_label, round(now - last, 3)))
+        self._mark_t = now
+        self._mark_label = stage
+
     def _spawn(self, args):
         return subprocess.Popen(
             args,
@@ -72,6 +80,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         self.prep_config = os.path.join(self.workdir, "prep.txt")
 
     def _start_quadwild(self):
+        self._mark("engine_quadwild")
         self._phase = "QUADWILD"
         args = [os.path.join(self.bin_dir, BIN_QUADWILD + EXE),
                 self.input_obj, "2", self.prep_config]
@@ -143,11 +152,42 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         sum_a = np.maximum(sum_a, 1e-12)
         mult = np.ones(n_patches)
         if strength > 0.0:
-            sum_n = np.zeros((n_patches, 3))
-            np.add.at(sum_n, patch_ids, cross / 2.0)
-            curv = 1.0 - np.linalg.norm(sum_n, axis=1) / sum_a
+            # Per-face curvature from edge dihedrals, aggregated as a
+            # per-patch MEDIAN: patches often straddle creases (no feature
+            # borders on Organic), and a mean-based proxy let a minority
+            # crease shrink a whole flat plateau (measured inverted
+            # behavior). The median follows the patch's majority.
+            n_f = f.shape[0]
+            fn = cross / np.maximum(area2, 1e-12)[:, None]
+            eges = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+            eges.sort(axis=1)
+            codes = eges[:, 0].astype(np.int64) * (v.shape[0] + 1) + eges[:, 1]
+            eface = np.tile(np.arange(n_f), 3)
+            order = np.argsort(codes, kind="stable")
+            sc = codes[order]
+            ef = eface[order]
+            same = sc[1:] == sc[:-1]
+            fa = ef[:-1][same]
+            fb = ef[1:][same]
+            dih = np.arccos(np.clip((fn[fa] * fn[fb]).sum(axis=1), -1.0, 1.0))
+            fsum = np.zeros(n_f)
+            fcnt = np.zeros(n_f)
+            np.add.at(fsum, fa, dih)
+            np.add.at(fsum, fb, dih)
+            np.add.at(fcnt, fa, 1.0)
+            np.add.at(fcnt, fb, 1.0)
+            fcurv = fsum / np.maximum(fcnt, 1.0)
+            porder = np.argsort(patch_ids, kind="stable")
+            sorted_curv = fcurv[porder]
+            sorted_pids = patch_ids[porder]
+            bounds = np.searchsorted(sorted_pids, np.arange(n_patches + 1))
+            curv = np.zeros(n_patches)
+            for pi in range(n_patches):
+                seg = sorted_curv[bounds[pi]:bounds[pi + 1]]
+                if len(seg):
+                    curv[pi] = float(np.median(seg))
             mean_curv = float(np.average(curv, weights=sum_a))
-            rel = (curv + 1e-4) / (mean_curv + 1e-4)
+            rel = (curv + 1e-3) / (mean_curv + 1e-3)
             # At full strength a patch 4x more curved than average gets ~2x
             # smaller edges; clamped to Quad Remesher's 0.25..4 range.
             mult *= np.clip(rel ** (-0.5 * strength), 0.25, hi)
@@ -277,6 +317,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             self.qfp_scale = self._prepare_quantization(
                 self.effective_target, strength,
                 settings.use_paint_density)
+        self._mark(f"engine_qfp_{self._qfp_runs + 1}")
         self._qfp_runs += 1
         with open(self.main_config, "w") as f:
             f.write(MAIN_CONFIG_TEMPLATE.format(
@@ -417,6 +458,44 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         if len(arr) > 20000:
             arr = arr[::len(arr) // 20000 + 1]
         return arr
+
+    def _should_skip_preremesh(self, co, tris, rem_faces):
+        """True when the input can feed the field/tracer directly: uniform
+        edge lengths, clean manifold topology, and already near the
+        engine's working resolution. On such meshes the pre-remesh only
+        resamples good geometry (measured: skipping is ~1.6x faster AND
+        improves corner angles); dirty or oversized inputs keep it."""
+        n = tris.shape[0]
+        if n < 1000 or n > rem_faces * 1.2:
+            return False
+        edges = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]],
+                                tris[:, [2, 0]]])
+        lens = np.linalg.norm(co[edges[:, 0]] - co[edges[:, 1]], axis=1)
+        mean = float(lens.mean())
+        if mean <= 0.0:
+            return False
+        cv = float(lens.std()) / mean
+        if cv > 0.80:
+            return False  # too irregular: the remesh repairs/uniformizes
+        # Structured lattices (primitives, grids) NEED the remesh: their
+        # identical rows make BEAUTY pick coherent diagonals, which biases
+        # the field (torus: 3.5 deg remeshed vs 14 deg raw). Signature:
+        # a few repeated edge-length classes dominate the histogram.
+        classes, counts = np.unique(np.round(lens / mean, 2),
+                                    return_counts=True)
+        top3 = float(np.sort(counts)[-3:].sum()) / len(lens)
+        if top3 > 0.35:
+            return False
+        if float(np.percentile(lens, 1)) < 0.10 * mean:
+            return False  # pole fans / sliver bands: let the engine resample
+        if float(lens.min()) < 1e-6 * mean:
+            return False  # degenerate edges: let the engine repair
+        key = np.sort(edges, axis=1)
+        code = key[:, 0].astype(np.int64) * (co.shape[0] + 1) + key[:, 1]
+        _, counts = np.unique(code, return_counts=True)
+        if int(counts.max()) > 2:
+            return False  # non-manifold: let the engine repair
+        return True
 
     def _mesh_arrays(self, mesh, matrix):
         """Triangulate the (owned) mesh in place and return (coords, tris)
@@ -833,6 +912,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             self.report({"WARNING"}, f"Weight transfer failed: {exc}")
 
     def _finish(self, context):
+        self._mark("import+post")
         settings = self.opts
         suffix = "_quadrangulation_smooth.obj" if settings.smooth_result \
             else "_quadrangulation.obj"
@@ -892,6 +972,9 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         else:
             got_txt = f"{quads} quads"
             floor_txt = f"≈{floor} quads"
+        self._mark("done")
+        if os.environ.get("REQUAD_PROFILE"):
+            print("REQUAD_PROFILE:", self.stage_times)
         if floor and target < floor * 0.9:
             self.report({"WARNING"},
                         f"ReQuad: {got_txt} in {elapsed:.1f}s — this shape "
@@ -938,6 +1021,9 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         for _ in self.sym_axes:
             self.effective_target = max(self.effective_target // 2, 50)
         self.floor_estimate = 0
+        self.stage_times = []
+        self._mark_t = None
+        self._mark("mesh_build")
         self._qfp_runs = 0
         self.best_run = 0
         self.best_quads = 0
@@ -958,6 +1044,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                 src.evaluated_get(deps), depsgraph=deps)
             matrix = src.matrix_world
         co, tris = self._mesh_arrays(export_mesh, matrix)
+        self._mark("guides+hash")
         self.guide_segments = self._collect_guide_segments(
             context, src, export_mesh, co, settings)
         if tris.shape[0] == 0:
@@ -984,8 +1071,10 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             if raw <= level:
                 rem_faces = level
                 break
+        do_remesh = settings.pre_remesh and not self._should_skip_preremesh(
+            co, tris, rem_faces)
         prep_content = PREP_CONFIG_TEMPLATE.format(
-            remesh=int(settings.pre_remesh), sharp=sharp,
+            remesh=int(do_remesh), sharp=sharp,
             rem_faces=rem_faces)
 
         # Everything that influences the engine's field/tracing step goes
@@ -1022,6 +1111,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         else:
             self.workdir = tempfile.mkdtemp(prefix="requad_")
             self._set_workdir_paths()
+            self._mark("write_obj")
             self._write_obj(co, tris)
             # Guides: user-marked edges become engine features. Supplying a
             # feature file disables the engine's own detection, so ours
