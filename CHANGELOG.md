@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 — 2026-07-20
+
+- **Auto quantizer blend (alpha)**: shapes with few traced patches (simple,
+  low-singularity geometry) now use strict isometry (alpha 0.005) while
+  complex shapes keep the regularity-friendly 0.3. Torus: 3.59° → 2.75°
+  mean corner deviation with zero irregular vertices; complex organic
+  results unchanged. Decided automatically from the patch count.
+
+
 ## 0.9.0 — 2026-07-20
 
 Weak-point elimination round, driven by the full benchmark:

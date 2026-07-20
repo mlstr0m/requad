@@ -319,8 +319,15 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                 settings.use_paint_density)
         self._mark(f"engine_qfp_{self._qfp_runs + 1}")
         self._qfp_runs += 1
+        # Quantizer blend: complex shapes (many patches) profit from the
+        # regularity-friendly 0.3 (statue 12.1 -> 8.9 deg); simple
+        # low-singularity shapes prefer strict isometry (torus: 2.9 vs
+        # 4.0 deg, zero irregular vertices). Patch count decides.
+        patches = max(self.floor_estimate // MIN_QUADS_PER_PATCH, 1)
+        alpha = 0.005 if patches <= 20 else 0.3
         with open(self.main_config, "w") as f:
             f.write(MAIN_CONFIG_TEMPLATE.format(
+                alpha=alpha,
                 scale=self.qfp_scale,
                 align=int(settings.align_singularities)))
         self._phase = f"QUANTIZE {self._qfp_runs}"

@@ -15,7 +15,7 @@ EXE = ".exe" if sys.platform == "win32" else ""
 # The flow/satsuma JSON paths below are resolved relative to the engine
 # working directory, which is why every subprocess runs with cwd=engine root.
 MAIN_CONFIG_TEMPLATE = """\
-alpha 0.3
+alpha {alpha}
 ilpMethod 1
 timeLimit 200
 gapLimit 0.0
