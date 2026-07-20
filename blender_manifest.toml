@@ -21,6 +21,9 @@ copyright = [
 # Bundled engine binaries — one build per platform, produced by CI.
 platforms = ["macos-arm64", "linux-x64", "windows-x64"]
 
+[permissions]
+files = "Write temp mesh files and run the bundled remeshing engine"
+
 [build]
 paths_exclude_pattern = [
   "__pycache__/",
@@ -29,6 +32,7 @@ paths_exclude_pattern = [
   "/tests/",
   "/patches/",
   "/docs/",
+  "/benchmarks/",
   "*.zip",
   "/dist/",
   "/artifacts/",

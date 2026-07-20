@@ -1454,46 +1454,70 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                 if area.type == "VIEW_3D":
                     area.tag_redraw()
 
-        code = self._proc.poll()
-        if code is None:
-            return {"PASS_THROUGH"}
-        if code != 0:
-            return self._cancel(
-                context, f"Engine failed in {self._phase} — see log: {self.log_path}")
-
-        if self._phase == "QUADWILD":
-            if not os.path.isfile(self.patches_obj):
+        # No exception may escape a modal handler: an uncaught traceback
+        # surfaces as a raw error popup AND leaves the timer/progress
+        # stuck. Anything unexpected becomes a clean cancel + log pointer.
+        try:
+            code = self._proc.poll()
+            if code is None:
+                return {"PASS_THROUGH"}
+            if code != 0:
                 return self._cancel(
-                    context, f"No patch output — see log: {self.log_path}")
-            self._start_qfp()
-            return {"PASS_THROUGH"}
+                    context,
+                    f"Engine failed in {self._phase} — see log: {self.log_path}")
 
-        if self._needs_requantize(context):
-            self._start_qfp()
-            return {"PASS_THROUGH"}
+            if self._phase == "QUADWILD":
+                if not os.path.isfile(self.patches_obj):
+                    return self._cancel(
+                        context, f"No patch output — see log: {self.log_path}")
+                self._start_qfp()
+                return {"PASS_THROUGH"}
 
-        self._teardown(context)
-        return self._finish(context)
+            if self._needs_requantize(context):
+                self._start_qfp()
+                return {"PASS_THROUGH"}
+
+            self._teardown(context)
+            return self._finish(context)
+        except Exception as exc:  # noqa: BLE001 — last-resort user-facing guard
+            import traceback
+            traceback.print_exc()
+            return self._cancel(
+                context,
+                f"ReQuad internal error: {str(exc)[:120]} — details in the "
+                f"system console, engine log: {self.log_path}")
 
     def _cancel(self, context, message):
-        if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
+        try:
+            if self._proc and self._proc.poll() is None:
+                self._proc.terminate()
+        except OSError:
+            pass
         self._teardown(context)
         self.report({"WARNING"}, message)
         return {"CANCELLED"}
 
     def _teardown(self, context):
-        if self._timer:
-            context.window_manager.event_timer_remove(self._timer)
-            self._timer = None
-            context.window_manager.progress_end()
-            context.window_manager.requad_progress = -1
-            for area in context.screen.areas:
-                if area.type == "VIEW_3D":
-                    area.tag_redraw()
-        if context.workspace:
-            context.workspace.status_text_set(None)
-        self.log_handle.close()
+        # teardown must never raise — it runs on every exit path,
+        # including the internal-error guard
+        try:
+            if self._timer:
+                context.window_manager.event_timer_remove(self._timer)
+                self._timer = None
+                context.window_manager.progress_end()
+                context.window_manager.requad_progress = -1
+                for area in context.screen.areas:
+                    if area.type == "VIEW_3D":
+                        area.tag_redraw()
+            if context.workspace:
+                context.workspace.status_text_set(None)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self.log_handle:
+                self.log_handle.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class REQUAD_OT_set_count(bpy.types.Operator):

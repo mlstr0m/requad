@@ -1,0 +1,43 @@
+name: Bug report
+description: Something crashed, produced a wrong result, or behaved unexpectedly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! A reproducible mesh is what fixes bugs fastest.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: ReQuad version, Blender version, OS
+      placeholder: "ReQuad 0.11.1, Blender 4.5.2, Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead
+    validations:
+      required: true
+  - type: textarea
+    id: mesh
+    attributes:
+      label: Mesh to reproduce
+      description: |
+        Attach a .blend or .obj that reproduces the issue (drag & drop),
+        or describe the mesh (poly count, source: sculpt/scan/CAD).
+        If you can't share the mesh, the engine log helps: the error
+        message shows its path (a file named `quadwild.log` in a temp
+        folder).
+    validations:
+      required: false
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings used
+      description: Preset, Count, symmetry, anything changed in Advanced
+      placeholder: "Organic, 5000 quads, Symmetry X, defaults otherwise"
+    validations:
+      required: false

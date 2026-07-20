@@ -129,7 +129,46 @@ jobs:
                   --source-dir . --output-dir dist
           ls -lh dist/
 
+      - name: Validate extension zips
+        run: |
+          for z in dist/*.zip; do
+            blender --command extension validate "$z"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: requad-extension
           path: dist/*.zip
+
+  # Quality gate: the full test battery runs against the freshly built
+  # linux zip on every push. A red gate means the zips must not ship.
+  test:
+    needs: extension
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: requad-extension
+          path: dist
+
+      - name: Install Blender
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSL "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz" -o blender.tar.xz
+          tar xf blender.tar.xz
+          echo "$RUNNER_TEMP/blender-${BLENDER_VERSION}-linux-x64" >> "$GITHUB_PATH"
+
+      - name: Run test suites against the built zip
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq \
+            libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libegl1
+          ZIP=$(ls dist/requad-*-linux_x64.zip)
+          fail=0
+          for t in tests/test_headless.py tests/test_robustness.py tests/test_beta.py; do
+            echo "== $t"
+            REQUAD_ZIP="$PWD/$ZIP" blender -b --python "$t" | tee /tmp/out.log
+            grep -q "^0 failure(s)" /tmp/out.log || fail=1
+          done
+          exit $fail
