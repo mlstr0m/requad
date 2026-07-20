@@ -27,6 +27,19 @@ Remesher — then beyond.
 - **Headless/batch** — works in `blender -b` for pipeline automation
 - Bundled engine binaries, no external downloads or configuration
 
+## How it compares
+
+Benchmarked against Quad Remesher 1.4.1 under an audited, reproducible
+protocol (15 scenarios, both QR modes, matched budgets, median of 3
+campaigns — methodology and raw data in
+[docs/BENCHMARK_METHODOLOGY.md](docs/BENCHMARK_METHODOLOGY.md) and
+[docs/BENCHMARK_VS_QUADREMESHER.md](docs/BENCHMARK_VS_QUADREMESHER.md)):
+at equal face budgets ReQuad leads on corner angles (10-2), quad aspect
+(12-2), irregular vertices (4-3), surface fidelity (9-6) and count
+accuracy (3.2% vs 7.8% mean error). Quad Remesher keeps the lead on very
+coarse organic targets, fine detail adaptivity, and cold-start speed —
+all tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Install
 
 Download the extension `.zip` for your platform and install it via
@@ -63,11 +76,10 @@ Copy `build/Build/bin/{quadwild,quad_from_patches}` into
 
 ## Roadmap
 
-1. **Robustness** — multi-component meshes, symmetry, transform preservation
-2. **Quad Remesher parity** — adaptive density, painted density (vertex
-   colors), edge-loop guides from seams/creases/materials
-3. **Beyond** — curvature-aligned fields (NeurCross-class), speed work,
-   in-process engine (no OBJ round-trip)
+The detailed, measurement-driven roadmap lives in
+[docs/ROADMAP.md](docs/ROADMAP.md). Current frontier: per-vertex size
+field (9c), singularity migration for coarse organics (9d), in-process
+engine for cold-start speed.
 
 ## License & attribution
 

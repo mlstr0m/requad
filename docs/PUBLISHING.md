@@ -1,7 +1,9 @@
-# Passer ReQuad en public — checklist
+# Publication — état et étapes restantes
 
-Tout est prêt côté code ; ces étapes sont volontairement laissées à la
-décision du mainteneur (elles rendent le projet public et engagent son nom).
+État (2026-07-20) : repo public ✅, CI 3 plateformes verte avec garde-fous
+anti-zip-vide ✅, releases GitHub v0.11.1 avec zips vérifiés ✅,
+`blender --command extension validate` propre ✅, 49/49 tests ✅.
+Restent les étapes qui engagent le nom du mainteneur :
 
 ## 1. Rendre le repo public
 
