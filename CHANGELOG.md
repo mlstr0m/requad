@@ -1,6 +1,43 @@
 # Changelog
 
-## 0.10.0 — 2026-07-20
+## 0.11.0 — 2026-07-20
+
+The rigor round: the benchmark itself was audited for objectivity (six
+methodology flaws found and fixed — biased fidelity metric, budget-
+confounded comparisons, hand-picked presets, polluted bench scene,
+local-space metrics, no variance control; see
+docs/BENCHMARK_METHODOLOGY.md), then Quad Remesher's remaining wins were
+reverse-engineered from its outputs and attacked:
+
+- **Convergence polish**: after the hybrid relaxation, near-uniform
+  results (edge-length CV < 0.20) get up to 240 extra Laplacian +
+  reprojection rounds. The torus autopsy showed all tools emit the SAME
+  2862-quad pure grid — QR's 1.08° vs our 2.54° was purely vertex
+  placement, and 1.08° is exactly the converged uniform-grid optimum.
+  Torus: 2.54° → **1.08°** (= QR, better aspect: 1.048 vs 1.203).
+  Beveled cube: 1.65° → **0.92°** (QR at equal budget: 1.30°).
+  Adaptive organics are gated out — a uniform Laplacian would erase
+  their density field (measured statue fidelity 1.2‰ → 7.4‰) — and a
+  **bidirectional fidelity guard** (mid-face chord error + coverage from
+  source samples, checked every 40 rounds with rollback) protects thin
+  sheets: without it Suzanne's ears melted (1.5‰ → 6.6‰ source-to-result
+  distance) while every vertex innocently stayed on the surface.
+- **Honesty fix — determinism claim corrected**: the fixed engine seed
+  covers the pattern RNG, but the bi-MDF quantization solver is NOT
+  run-deterministic on highly symmetric shapes (sphere-3000 measured
+  across 4 runs: 2954-3016 faces, 1.46°-4.36° mean angle). Benchmarks
+  now report ReQuad as the median of 3 full campaigns; docs updated.
+- **Doublet removal**: interior valence-2 vertices (quantizer artifacts
+  found on statue/walkie autopsies) are dissolved into clean quads.
+- **3-5 singularity pair annihilation** (Organic): quad-edge rotations
+  that strictly reduce Σ|valence−4| — clustered 3-5 constellations
+  cancel outright. Statue irregular vertices: 4.8% → 4.5%. Never
+  applied to Mechanical (singularities on feature corners are wanted).
+- Benchmarked against QR in BOTH its modes (default Adaptive Quad Count,
+  and ExactQuadCount): at matched budgets QR's headline numbers drop
+  (statue 7.08° at +73% budget becomes 8.33° at budget), and its
+  ExactQuadCount mode destroys the thin-shell CAD case outright
+  (94.6‰ fidelity vs our 1.3‰).
 
 The "beat Quad Remesher" round — every default is now decided by measured
 shape statistics, and the head-to-head benchmark (30 runs, 15 scenarios,

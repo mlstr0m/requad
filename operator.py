@@ -190,7 +190,9 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             rel = (curv + 1e-3) / (mean_curv + 1e-3)
             # At full strength a patch 4x more curved than average gets ~2x
             # smaller edges; clamped to Quad Remesher's 0.25..4 range.
-            mult *= np.clip(rel ** (-0.5 * strength), 0.25, hi)
+            # Exponent overridable for experiments via REQUAD_ADAPT_EXP.
+            aexp = float(os.environ.get("REQUAD_ADAPT_EXP", "0.5"))
+            mult *= np.clip(rel ** (-aexp * strength), 0.25, hi)
         if use_paint:
             paint = self._paint_patch_multipliers(v, f, patch_ids, n_patches)
             if paint is not None:
@@ -588,11 +590,18 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         ev = ev.reshape(-1, 2)
         lens = np.linalg.norm(vco[ev[:, 0]] - vco[ev[:, 1]], axis=1)
         thr = 0.03 * float(lens.mean())
-        if not bool((lens < thr).any()):
-            return
         bm = bmesh.new()
         bm.from_mesh(me)
-        bmesh.ops.dissolve_degenerate(bm, dist=thr, edges=bm.edges)
+        if bool((lens < thr).any()):
+            bmesh.ops.dissolve_degenerate(bm, dist=thr, edges=bm.edges)
+        # interior valence-2 vertices (doublets: two quads sharing two
+        # edges) are quantizer artifacts — dissolving one merges the pair
+        # into a single clean quad
+        doublets = [v for v in bm.verts
+                    if len(v.link_edges) == 2
+                    and not any(e.is_boundary for e in v.link_edges)]
+        if doublets:
+            bmesh.ops.dissolve_verts(bm, verts=doublets)
         tris = [f for f in bm.faces if len(f.verts) == 3]
         if tris:
             bmesh.ops.join_triangles(
@@ -602,6 +611,94 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         bm.free()
         for poly in me.polygons:
             poly.use_smooth = True
+
+    def _cancel_singularity_pairs(self, ob):
+        """Quad-edge rotations that strictly reduce Σ|valence−4|.
+
+        The quantizer leaves clustered 3-5 singularity constellations
+        (statue: nearest-neighbor singularity distance 0.34% of the bbox vs
+        0.56% for Quad Remesher). Rotating the shared edge of two quads
+        moves one valence from each edge endpoint onto the two opposite
+        hexagon corners; when endpoints are 5s and/or the corners are 3s
+        this annihilates singularities outright. Only strictly improving
+        rotations are applied, so the pass can never make the mesh worse;
+        geometry is untouched (the relaxation that follows re-shapes the
+        affected quads)."""
+        me = ob.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.verts.ensure_lookup_table()
+        val = {v: len(v.link_edges) for v in bm.verts}
+        boundary = {v for v in bm.verts
+                    if any(e.is_boundary for e in v.link_edges)}
+
+        def cost(v, dv=0):
+            return abs(val[v] + dv - 4)
+
+        changed = 0
+        for _ in range(5):
+            improved = False
+            for e in list(bm.edges):
+                if not e.is_valid or len(e.link_faces) != 2:
+                    continue
+                f1, f2 = e.link_faces
+                if len(f1.verts) != 4 or len(f2.verts) != 4:
+                    continue
+                l1 = next(l for l in f1.loops if l.edge == e)
+                l2 = next(l for l in f2.loops if l.edge == e)
+                a, b = l1.vert, l1.link_loop_next.vert
+                # f1 side path: b→c→d→a ; f2 side path: a→e2→f2v→b
+                c = l1.link_loop_next.link_loop_next.vert
+                d = l1.link_loop_prev.vert
+                ev = l2.link_loop_next.link_loop_next.vert
+                fv = l2.link_loop_prev.vert
+                if l2.vert != b:
+                    # inconsistent winding — skip rather than guess
+                    continue
+                hexv = [a, b, c, d, ev, fv]
+                if len(set(hexv)) != 6 or any(v in boundary for v in hexv):
+                    continue
+                base = cost(a) + cost(b)
+                best = None
+                # diagonal d–f: new faces (d,a,e,f) + (f,b,c,d)
+                if bm.edges.get((d, fv)) is None:
+                    delta = (cost(a, -1) + cost(b, -1) + cost(d, 1)
+                             + cost(fv, 1)) - (base + cost(d) + cost(fv))
+                    if delta < 0:
+                        best = (delta, d, fv,
+                                (d, a, ev, fv), (fv, b, c, d))
+                # diagonal c–e: new faces (c,d,a,e) + (e,f,b,c)
+                if bm.edges.get((c, ev)) is None:
+                    delta = (cost(a, -1) + cost(b, -1) + cost(c, 1)
+                             + cost(ev, 1)) - (base + cost(c) + cost(ev))
+                    if delta < 0 and (best is None or delta < best[0]):
+                        best = (delta, c, ev,
+                                (c, d, a, ev), (ev, fv, b, c))
+                if best is None:
+                    continue
+                _, g1, g2, q1, q2 = best
+                try:
+                    bmesh.ops.delete(bm, geom=[e], context="EDGES")
+                    nf1 = bm.faces.new(q1)
+                    nf2 = bm.faces.new(q2)
+                except ValueError:
+                    continue
+                # winding follows the coherent hexagon cycle — normals
+                # stay consistent without a recalc
+                nf1.smooth = nf2.smooth = True
+                val[a] -= 1
+                val[b] -= 1
+                val[g1] += 1
+                val[g2] += 1
+                changed += 1
+                improved = True
+            if not improved:
+                break
+        if changed:
+            bm.to_mesh(me)
+            me.update()
+        bm.free()
+        return changed
 
     def _relax_result(self, context, ob, iterations, step=0.5,
                       pin_angle=None):
@@ -625,6 +722,11 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                      for v in mesh.vertices]
         src_polys = [tuple(p.vertices) for p in mesh.polygons]
         bvh = BVHTree.FromPolygons(src_verts, src_polys)
+        # coverage probes for the polish guard: source face centers whose
+        # distance to the result surface reveals detail the quads slid off
+        step_s = max(1, len(mesh.polygons) // 600)
+        src_samples = [(p.center if mat is None else mat @ p.center).copy()
+                       for p in list(mesh.polygons)[::step_s]]
 
         feature_segments = None
         if pin_angle is not None:
@@ -781,6 +883,91 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                 hit = bvh.find_nearest(Vector(world[i]))
                 if hit is not None and hit[0] is not None:
                     world[i] = hit[0]
+
+        # Convergence polish: the hybrid loop shapes quads near features,
+        # but its few rounds leave low-frequency wobble on regular regions
+        # (torus grids measured 2.5° mean angle error vs the 1.08° optimum
+        # of a converged uniform grid). Extra uniform-Laplacian rounds
+        # converge to that optimum — but they also erase any adaptive
+        # density field (statue fidelity regressed 1.2‰ → 7.4‰ when
+        # measured), so the polish only runs on near-uniform results:
+        # full strength below 0.15 edge-length CV, fading to nothing at
+        # 0.20. Adaptive organics already win at matched budgets without
+        # it; uniform shapes (torus/bevel/cylinder) are where the wobble
+        # cost angles.
+        L0 = np.linalg.norm(world[edges[:, 0]] - world[edges[:, 1]], axis=1)
+        cv = float(L0.std() / max(L0.mean(), 1e-12))
+        scale = min(max((0.20 - cv) / 0.05, 0.0), 1.0)
+        if os.environ.get("REQUAD_NO_POLISH"):
+            scale = 0.0
+        polish = int(min(240, 700000 // max(n, 1)) * scale)
+        movable_idx = np.nonzero(movable)[0]
+        if polish and len(quads):
+            # Fidelity guard: vertices stay ON the surface by construction,
+            # so over-polishing fails in two measurable ways — mid-face
+            # chord error (quads sliding across curvature: coarse bevel
+            # 9.8‰→17.8‰) and coverage loss (thin sheets melting under the
+            # Laplacian: Suzanne's ears 1.5‰→6.6‰ source-to-result). Run in
+            # chunks and roll back when either degrades beyond 20% plus an
+            # edge-length-scaled slack (tiny absolute values are noisy).
+            sample = quads[:: max(1, len(quads) // 600)]
+            all_polys = [tuple(p.vertices) for p in me.polygons]
+            med_edge = float(L0.mean())
+
+            def _chord_err(w):
+                centers = w[sample].mean(axis=1)
+                tot = 0.0
+                for cpt in centers:
+                    hit = bvh.find_nearest(Vector(cpt))
+                    if hit is not None and hit[0] is not None:
+                        tot += (Vector(cpt) - hit[0]).length
+                return tot / max(len(centers), 1)
+
+            def _cover_err(w):
+                rbvh = BVHTree.FromPolygons(
+                    [Vector(p) for p in w], all_polys)
+                tot = 0.0
+                for spt in src_samples:
+                    hit = rbvh.find_nearest(spt)
+                    if hit is not None and hit[0] is not None:
+                        tot += (spt - hit[0]).length
+                return tot / max(len(src_samples), 1)
+
+            def _degraded(err, err0):
+                return err > max(err0 * 1.2, err0 + 0.02 * med_edge)
+
+            fid0 = _chord_err(world)
+            cov0 = _cover_err(world)
+            best = world.copy()
+            done = 0
+            while done < polish:
+                chunk = min(40, polish - done)
+                for _ in range(chunk):
+                    lap = np.zeros_like(world)
+                    np.add.at(lap, edges[:, 0], world[edges[:, 1]])
+                    np.add.at(lap, edges[:, 1], world[edges[:, 0]])
+                    target = lap / degree
+                    world[movable] += 0.8 * (target[movable] - world[movable])
+                    if guided_idx is not None and len(guided_idx):
+                        for i in guided_idx:
+                            d = world[i] - g_a
+                            t = np.clip((d * g_ab).sum(axis=1) / g_len2,
+                                        0.0, 1.0)
+                            closest = g_a + g_ab * t[:, None]
+                            j = int(np.linalg.norm(closest - world[i],
+                                                   axis=1).argmin())
+                            world[i] = closest[j]
+                    for i in movable_idx:
+                        hit = bvh.find_nearest(Vector(world[i]))
+                        if hit is not None and hit[0] is not None:
+                            world[i] = hit[0]
+                done += chunk
+                if _degraded(_chord_err(world), fid0) or \
+                        _degraded(_cover_err(world), cov0):
+                    world = best
+                    break
+                best = world.copy()
+            world = best
 
         co = (world - tr) @ inv.T
         me.vertices.foreach_set("co", co.reshape(-1))
@@ -955,6 +1142,10 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         for poly in ob.data.polygons:
             poly.use_smooth = True
         self._cleanup_degenerate(ob)
+        if settings.preset == "ORGANIC" and not os.environ.get("REQUAD_NO_TOPO"):
+            # mechanical singularities often sit on feature corners on
+            # purpose — only organics get the topological cleanup
+            self._cancel_singularity_pairs(ob)
         if settings.relax_iterations > 0:
             pin = None
             if settings.preset != "ORGANIC":
