@@ -97,6 +97,21 @@ non bornée, désormais cappée à 100 tours — patch 0002).
    Le reste vient de la connectivité : optimisation type local-global
    (rectangularisation par quad) puis édition de singularités. C'est le
    chantier « qualité » à plus fort levier identifié à ce jour.
+9c. **Champ de taille par vertex** (découverte du bench rigoureux 0.11.x) :
+   notre adaptivité est PAR PATCH ; quand le tracing (non-déterministe)
+   produit des patchs qui chevauchent une frontière plate/courbée, le
+   contraste s'évanouit (mesuré : ~1 tirage sur 2 sur une sphère à
+   plateau, ratio x1,08 vs x2,17). QR utilise un champ par vertex — c'est
+   son dernier avantage d'adaptivité (skull : fid p95 2,5‰ vs 4,9‰ à
+   compte égal). Pistes : pré-remesh piloté par densité (le pre-remesh
+   accepte un champ de taille ?), ou subdivision adaptative des patchs
+   avant quantification.
+9d. **Migration de singularités** : l'annihilation strictement améliorante
+   (0.11.x : rotations + collapses de diagonales singulières) plafonne
+   vite — les constellations gagnantes sont rares. Combler les ~3 points
+   d'irréguliers restants sur l'organique coarse exige des chaînes de
+   rotations neutres qui rapprochent les paires 3-5 avant annihilation
+   (transport de singularités, cf. Bommes et al.).
 10. **Champ neural en option** : NeurCross/CrossGen-style pour le placement
     des singularités — qualité max, temps de calcul assumé.
 11. 🟡 **Vitesse** — largement résolu en 0.5.x : le profilage a montré que

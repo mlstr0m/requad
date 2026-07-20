@@ -203,6 +203,17 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         mult /= max(float(np.average(mult, weights=sum_a)), 1e-9)
         mult = np.clip(mult, 0.2, hi_total)
         np.savetxt(scales_path, mult, fmt="%.6f")
+        dbg = os.environ.get("REQUAD_DEBUG_SCALES")
+        if dbg:
+            # test/debug hook: per-patch [curvature, multiplier] pairs as
+            # sent to the engine. Patch tracing is not run-deterministic,
+            # so tests assert the curvature→multiplier RELATION on the
+            # current draw, never absolute values.
+            if strength > 0.0:
+                np.savetxt(dbg, np.column_stack([curv, mult]), fmt="%.6f")
+            else:
+                np.savetxt(dbg, np.column_stack([np.zeros_like(mult), mult]),
+                           fmt="%.6f")
         return scale
 
     def _paint_patch_multipliers(self, verts, faces, patch_ids, n_patches):
@@ -628,16 +639,23 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         bm = bmesh.new()
         bm.from_mesh(me)
         bm.verts.ensure_lookup_table()
-        val = {v: len(v.link_edges) for v in bm.verts}
-        boundary = {v for v in bm.verts
-                    if any(e.is_boundary for e in v.link_edges)}
-
-        def cost(v, dv=0):
-            return abs(val[v] + dv - 4)
-
         changed = 0
-        for _ in range(5):
-            improved = False
+        # collapses shrink the face count — keep well inside the ±8%
+        # count tolerance
+        max_collapse = max(4, len(bm.faces) // 25)
+        collapsed = 0
+        for _ in range(8):
+            bm.verts.ensure_lookup_table()
+            val = {v: len(v.link_edges) for v in bm.verts}
+            boundary = {v for v in bm.verts
+                        if not v.link_faces
+                        or any(e.is_boundary for e in v.link_edges)}
+            touched = set()
+
+            def cost(v, dv=0):
+                return abs(val[v] + dv - 4)
+
+            ops_applied = 0
             for e in list(bm.edges):
                 if not e.is_valid or len(e.link_faces) != 2:
                     continue
@@ -656,7 +674,8 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                     # inconsistent winding — skip rather than guess
                     continue
                 hexv = [a, b, c, d, ev, fv]
-                if len(set(hexv)) != 6 or any(v in boundary for v in hexv):
+                if len(set(hexv)) != 6 or any(
+                        v in boundary or v in touched for v in hexv):
                     continue
                 base = cost(a) + cost(b)
                 best = None
@@ -690,10 +709,57 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                 val[b] -= 1
                 val[g1] += 1
                 val[g2] += 1
-                changed += 1
-                improved = True
-            if not improved:
+                touched.update(hexv)
+                ops_applied += 1
+
+            # Diagonal collapses: merging the two opposite corners of a
+            # quad removes the quad; the merged vertex gets va+vc−2 and
+            # the two side corners each lose one. A fully singular quad
+            # (3,5,3,5) annihilates FOUR singularities — the signature
+            # motif of coarse-organic singularity storms. Only strictly
+            # improving collapses are applied.
+            for f in list(bm.faces):
+                if collapsed >= max_collapse:
+                    break
+                if not f.is_valid or len(f.verts) != 4:
+                    continue
+                vs = list(f.verts)
+                if any(not v.is_valid or v in boundary or v in touched
+                       for v in vs):
+                    continue
+                done = False
+                for i0 in (0, 1):
+                    if done:
+                        break
+                    a, b = vs[i0], vs[(i0 + 1) % 4]
+                    c, d = vs[(i0 + 2) % 4], vs[(i0 + 3) % 4]
+                    delta = (abs(val[a] + val[c] - 6) + abs(val[b] - 5)
+                             + abs(val[d] - 5)) - (cost(a) + cost(b)
+                                                   + cost(c) + cost(d))
+                    if delta >= 0:
+                        continue
+                    # manifold guards: the corners may share only this
+                    # face and must not already be connected
+                    if bm.edges.get((a, c)) is not None:
+                        continue
+                    if len([ff for ff in a.link_faces
+                            if ff in set(c.link_faces)]) != 1:
+                        continue
+                    mid = (a.co + c.co) * 0.5
+                    try:
+                        bmesh.ops.pointmerge(bm, verts=[a, c], merge_co=mid)
+                    except ValueError:
+                        continue
+                    # the survivor of the merge changed valence too — freeze
+                    # the whole neighborhood until the next pass recount
+                    touched.update((a, b, c, d))
+                    collapsed += 1
+                    ops_applied += 1
+                    done = True
+
+            if not ops_applied:
                 break
+            changed += ops_applied
         if changed:
             bm.to_mesh(me)
             me.update()

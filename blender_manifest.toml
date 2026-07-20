@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "requad"
-version = "0.11.0"
+version = "0.11.1"
 name = "ReQuad"
 tagline = "Free auto-retopology powered by QuadWild bi-MDF"
 maintainer = "Aurélien <aurl.desert@gmail.com>"

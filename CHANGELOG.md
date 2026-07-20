@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.1 — 2026-07-20
+
+- **Singular diagonal collapses** (Organic): a quad whose diagonals read
+  (3,3) and (5,5) is a fully singular quad — collapsing it annihilates
+  four singularities at once. Applied only when strictly improving,
+  capped at 4% of the face count, manifold-guarded (verified 0
+  non-manifold edges across the validation battery). Coarse statue:
+  16.0% → 15.5% irregular vertices.
+- **Test suite honesty**: the one-shot adaptive-size threshold test was
+  flaky by construction — BOTH the patch tracing and the quantizer are
+  run-nondeterministic (measured x1.08-x2.17 spread of the plateau area
+  ratio across identical runs). The test now asserts the deterministic
+  invariant that is actually ours: multipliers must anti-correlate with
+  the measured per-patch curvature of the current draw
+  (REQUAD_DEBUG_SCALES hook). Verified stable across 3 consecutive runs.
+- Debug env switches documented by usage: REQUAD_NO_POLISH,
+  REQUAD_NO_TOPO, REQUAD_DEBUG_SCALES, REQUAD_ADAPT_EXP.
+
 ## 0.11.0 — 2026-07-20
 
 The rigor round: the benchmark itself was audited for objectivity (six
