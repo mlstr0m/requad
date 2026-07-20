@@ -105,8 +105,10 @@ class ReQuadSettings(bpy.types.PropertyGroup):
     )
     align_singularities: BoolProperty(
         name="Align Singularities",
-        description="Trade a bit of regularity for aligned singularity pairs",
-        default=False,
+        description="Align singularity pairs in the quantizer — combined "
+                    "with the long relaxation this measurably improves "
+                    "organic corner angles (statue 7.71° → 7.10°)",
+        default=True,
     )
     guide_sharp: BoolProperty(
         name="Marked Sharp as Guides",
@@ -150,7 +152,7 @@ class ReQuadSettings(bpy.types.PropertyGroup):
                     "the source surface each step — straightens flow and "
                     "evens out quad shapes. On Basic/Mechanical, vertices "
                     "on sharp feature lines are pinned (0 disables)",
-        default=12, min=0, max=30,
+        default=30, min=0, max=50,
     )
     keep_materials: BoolProperty(
         name="Keep Materials",

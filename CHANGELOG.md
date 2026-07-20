@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.0 — 2026-07-20
+
+The "beat Quad Remesher" round — every default is now decided by measured
+shape statistics, and the head-to-head benchmark (30 runs, 15 scenarios,
+docs/BENCHMARK_FINAL.md) comes out in ReQuad's favor:
+
+- **Organic defaults**: align singularities + 30 relax iterations —
+  Suzanne 7.42° vs QR 7.64° (ReQuad ahead), statue 7.10° vs 7.08°
+  (tie) at honest counts, while QR overshoots budgets by +40-179%.
+- **Simple-shape auto profile** (≤20 traced patches): strict isometry,
+  no alignment — sphere 4.47° vs QR 5.24° (ReQuad ahead),
+  torus 2.54° with zero irregular vertices.
+- Scorecard across all 15 scenarios: count accuracy 15/15 ReQuad,
+  surface fidelity 15/15 ReQuad, quad aspect 14/15 ReQuad; corner
+  angles split (QR keeps thin-shell CAD, dense sphere angles at
+  inflated budgets, and small-mesh cold-start speed).
+
+
 ## 0.9.1 — 2026-07-20
 
 - **Auto quantizer blend (alpha)**: shapes with few traced patches (simple,

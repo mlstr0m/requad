@@ -324,12 +324,17 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         # low-singularity shapes prefer strict isometry (torus: 2.9 vs
         # 4.0 deg, zero irregular vertices). Patch count decides.
         patches = max(self.floor_estimate // MIN_QUADS_PER_PATCH, 1)
-        alpha = 0.005 if patches <= 20 else 0.3
+        simple = patches <= 20
+        # Simple low-singularity shapes: strict isometry, no alignment
+        # (alignment distorted the sphere: 4.8 -> 7.4 deg); complex shapes:
+        # regularity blend + aligned singularity pairs (statue 7.7 -> 7.1).
+        alpha = 0.005 if simple else 0.3
+        align = settings.align_singularities and not simple
         with open(self.main_config, "w") as f:
             f.write(MAIN_CONFIG_TEMPLATE.format(
                 alpha=alpha,
                 scale=self.qfp_scale,
-                align=int(settings.align_singularities)))
+                align=int(align)))
         self._phase = f"QUANTIZE {self._qfp_runs}"
         self._proc = self._spawn(
             [os.path.join(self.bin_dir, BIN_QFP + EXE),
@@ -759,8 +764,10 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             np.add.at(lap, edges[:, 1], world[edges[:, 0]])
             lap_target = lap / degree
             # rectangles drive 90° corners, the Laplacian equalizes edge
-            # lengths — the blend beats either alone (measured)
-            target = 0.5 * rect_target + 0.5 * lap_target
+            # lengths — the blend beats either alone (measured); overridable
+            # for experiments via REQUAD_RECT_W
+            rw = float(os.environ.get("REQUAD_RECT_W", "0.5"))
+            target = rw * rect_target + (1.0 - rw) * lap_target
             world[movable] += step * (target[movable] - world[movable])
             if guided_idx is not None and len(guided_idx):
                 # attract flow onto guide polylines (curves, jagged bands)
