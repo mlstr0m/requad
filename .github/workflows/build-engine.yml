@@ -54,7 +54,9 @@ jobs:
                 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
                 -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" \
                 -DCMAKE_C_FLAGS="${{ matrix.cflags }}"
-          cmake --build build -j4
+          # --config is required for MSVC's multi-config generator (without
+          # it MSBuild silently builds Debug); no-op for single-config
+          cmake --build build -j4 --config Release
 
       - name: Collect binaries
         shell: bash
@@ -67,6 +69,13 @@ jobs:
               break
             fi
           done
+          # an empty ls exits 0 on a directory — check the binaries exist,
+          # otherwise the job goes green while shipping nothing
+          if ! ls out/${{ matrix.tag }}/quadwild* >/dev/null 2>&1; then
+            echo "::error::no engine binaries found for ${{ matrix.tag }}"
+            find engine-src/build -name "quadwild*" -o -name "quad_from_patches*" | head
+            exit 1
+          fi
           ls out/${{ matrix.tag }}/
 
       - uses: actions/upload-artifact@v4
@@ -91,6 +100,14 @@ jobs:
             mkdir -p "engine/$tag"
             cp "$d"* "engine/$tag/"
             chmod +x "engine/$tag/"* || true
+          done
+          # every platform in the manifest must actually ship an engine —
+          # a missing artifact must fail here, not on a user's machine
+          for tag in macos-arm64 linux-x64 windows-x64; do
+            if ! ls "engine/$tag"/quadwild* >/dev/null 2>&1; then
+              echo "::error::missing engine binaries for $tag"
+              exit 1
+            fi
           done
           ls -R engine
 
