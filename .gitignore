@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 *.zip
 .DS_Store
+
+# local dev engines are never tracked — distributed binaries come from CI
+engine/macos-arm64/
+engine/linux-x64/
+engine/windows-x64/

@@ -55,7 +55,7 @@ avant cet audit sont remplacés par ceux de `bench_rigor_2026-07-20.json`.
 - **Environnement** : Blender 5.2.0, macOS arm64 (M-series), scène vierge,
   62 runs, sauvegarde incrémentale.
 - Les maillages résultats des cas clés sont exportés en OBJ pour l'analyse
-  structurelle (placement des singularités) — dossier `qr_secrets/`.
+  structurelle (placement des singularités) — dossier `bench_meshes/`.
 
 ## Découverte : le déterminisme de ReQuad était surestimé
 

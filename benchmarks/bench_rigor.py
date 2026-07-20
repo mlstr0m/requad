@@ -36,7 +36,7 @@ import bpy
 from mathutils.bvhtree import BVHTree
 
 ASSETS = os.environ.get("BENCH_ASSETS", os.path.expanduser(
-    "~/Documents/PERSONAL/TESTING_REMESH/assets/models"))
+    "./bench_assets"))
 RESULTS_PATH = os.environ.get("BENCH_OUT",
                               os.path.abspath("bench_rigor.json"))
 OBJ_DIR = os.path.join(os.path.dirname(RESULTS_PATH), "bench_meshes")
