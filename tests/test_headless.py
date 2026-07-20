@@ -330,11 +330,20 @@ def main():
     # adaptive size: higher strength must spread quad sizes (flat caps get
     # bigger quads, the curved side smaller ones)
     def cylinder_area_cv(adaptive):
+        # Mechanical ignores Adaptive Size by design (harms thin shells);
+        # measured on an Organic displaced terrain: bumps vs flat borders
+        # give a strong per-patch curvature contrast
         bpy.ops.wm.read_homefile(use_empty=True)
-        bpy.ops.mesh.primitive_cylinder_add(vertices=64)
-        bpy.ops.object.modifier_add(type="TRIANGULATE")
-        bpy.ops.object.modifier_apply(modifier="Triangulate")
-        bpy.context.scene.requad.preset = "MECHANICAL"
+        bpy.ops.mesh.primitive_grid_add(x_subdivisions=128,
+                                        y_subdivisions=128, size=4)
+        ob = bpy.context.active_object
+        tex = bpy.data.textures.new("cvnoise", type="CLOUDS")
+        tex.noise_scale = 0.6
+        disp = ob.modifiers.new("d", "DISPLACE")
+        disp.texture = tex
+        disp.strength = 0.8
+        bpy.ops.object.modifier_apply(modifier="d")
+        bpy.context.scene.requad.preset = "ORGANIC"
         bpy.context.scene.requad.target_count = 3000
         bpy.context.scene.requad.adaptive_size = adaptive
         bpy.ops.requad.remesh()

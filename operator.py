@@ -133,6 +133,11 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         if patch_ids.ndim != 1 or patch_ids.shape[0] != f.shape[0]:
             return scale
         n_patches = int(patch_ids.max()) + 1
+        # Hard-surface shells: enlarging quads beyond the local feature
+        # scale destroys thin geometry (measured 40 deg mean angle error on
+        # a CAD shell) - cap the upper multiplier on Mechanical.
+        hi = 1.0 if self.opts.preset == "MECHANICAL" else 4.0
+        hi_total = 1.0 if self.opts.preset == "MECHANICAL" else 5.0
         sum_a = np.zeros(n_patches)
         np.add.at(sum_a, patch_ids, area2 / 2.0)
         sum_a = np.maximum(sum_a, 1e-12)
@@ -145,7 +150,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             rel = (curv + 1e-4) / (mean_curv + 1e-4)
             # At full strength a patch 4x more curved than average gets ~2x
             # smaller edges; clamped to Quad Remesher's 0.25..4 range.
-            mult *= np.clip(rel ** (-0.5 * strength), 0.25, 4.0)
+            mult *= np.clip(rel ** (-0.5 * strength), 0.25, hi)
         if use_paint:
             paint = self._paint_patch_multipliers(v, f, patch_ids, n_patches)
             if paint is not None:
@@ -154,7 +159,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         # but the area-weighted mean multiplier is 1 (on mostly-flat shapes
         # an un-normalized Adaptive Size skewed counts by up to 2x).
         mult /= max(float(np.average(mult, weights=sum_a)), 1e-9)
-        mult = np.clip(mult, 0.2, 5.0)
+        mult = np.clip(mult, 0.2, hi_total)
         np.savetxt(scales_path, mult, fmt="%.6f")
         return scale
 
@@ -263,8 +268,14 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         settings = self.opts
         if self._qfp_runs == 0:
             self.floor_estimate = self._reachable_floor()
+            # Adaptive sizing measurably harms hard-surface shells (thin CAD
+            # walls end up with quads larger than the local feature scale:
+            # 40 deg mean angle error on the benchmark walkie) - Mechanical
+            # runs uniform, painted density stays available.
+            strength = (0.0 if settings.preset == "MECHANICAL"
+                        else settings.adaptive_size / 100.0)
             self.qfp_scale = self._prepare_quantization(
-                self.effective_target, settings.adaptive_size / 100.0,
+                self.effective_target, strength,
                 settings.use_paint_density)
         self._qfp_runs += 1
         with open(self.main_config, "w") as f:

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.1 — 2026-07-20
+
+Full comparative benchmark campaign (36 runs, 9 shapes, vs Quad Remesher
+1.4.1 — see docs/BENCHMARK_FULL.md) surfaced and fixed a major defect:
+
+- **Mechanical preset no longer applies Adaptive Size**: curvature-driven
+  enlargement produced quads larger than the local feature scale on thin
+  CAD shells (benchmark walkie: 40.0° mean corner error, aspect 6.1).
+  Uniform sizing brings it to 12.9°/2.6; the cylinder's cap aspect also
+  improves from 2.11 to **1.08 — ahead of Quad Remesher's 1.33**. Painted
+  density remains available on Mechanical.
+- Benchmark takeaways recorded: fidelity to the source surface is a
+  ReQuad strength across the board (0.00-0.01‰ of the bbox diagonal vs
+  0.07-3.62‰ for QR, whose smoothing shrinks results); count accuracy
+  92-102% everywhere vs 61-279%; QR keeps the organic angle lead
+  (~1°, singularity placement) and small-mesh cold-start speed.
+
+
 ## 0.8.0 — 2026-07-19
 
 - **Multi-axis symmetry**: X/Y/Z toggles combine (half, quarter, eighth
