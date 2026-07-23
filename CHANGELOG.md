@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Field-cache correctness**: material assignments and engine identity now
+  participate in cache invalidation; incomplete QuadWild outputs are never
+  published to the cache and are removed after cancellation.
+- **Headless crash-proofing**: unexpected batch-mode errors now follow the same
+  clean cancellation path as interactive runs.
+- **Lean platform packages**: each split extension archive contains only its
+  target platform's native engine, with a CI assertion preventing regressions.
+- Cached temporary work directories are removed when the extension unloads.
+
 ## 0.11.2 — 2026-07-20
 
 Store-readiness release (extensions.blender.org submission):

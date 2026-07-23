@@ -19,8 +19,18 @@ from bpy.props import (
     StringProperty,
 )
 
-from .common import _ENGINE_CACHE, _platform_tag, resolve_engine
+from .common import (
+    _ENGINE_CACHE,
+    _platform_tag,
+    clear_step1_cache,
+    resolve_engine,
+)
 from .operator import REQUAD_OT_remesh, REQUAD_OT_set_count
+
+
+def _engine_dir_changed(self, context):
+    """Resolve the selected engine again on the next panel draw/run."""
+    _ENGINE_CACHE.clear()
 
 class ReQuadPreferences(bpy.types.AddonPreferences):
     bl_idname = __name__
@@ -31,7 +41,7 @@ class ReQuadPreferences(bpy.types.AddonPreferences):
                     "Leave empty to use the binaries bundled with the extension",
         subtype="DIR_PATH",
         default="",
-        update=lambda self, context: _ENGINE_CACHE.clear(),
+        update=_engine_dir_changed,
     )
 
     def draw(self, context):
@@ -259,6 +269,7 @@ def register():
 
 
 def unregister():
+    clear_step1_cache()
     del bpy.types.WindowManager.requad_progress
     del bpy.types.Scene.requad
     for cls in reversed(classes):

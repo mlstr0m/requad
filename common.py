@@ -4,6 +4,7 @@
 
 import os
 import platform
+import shutil
 import sys
 
 import bpy
@@ -112,6 +113,13 @@ _STEP1_CACHE = {}
 _STEP1_CACHE_MAX = 3
 
 
+def clear_step1_cache():
+    """Delete all cached field/tracing workdirs and forget their entries."""
+    for workdir in set(_STEP1_CACHE.values()):
+        shutil.rmtree(workdir, ignore_errors=True)
+    _STEP1_CACHE.clear()
+
+
 def resolve_engine(prefs):
     """Return (bin_dir, workdir) for the engine, or None if unavailable.
 
@@ -141,4 +149,3 @@ def resolve_engine(prefs):
         return None
     _ENGINE_CACHE[custom] = candidate
     return candidate
-

@@ -79,6 +79,38 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         self.main_config = os.path.join(self.workdir, "main.txt")
         self.prep_config = os.path.join(self.workdir, "prep.txt")
 
+    @staticmethod
+    def _step1_cache_valid(workdir):
+        """A cache entry is usable only with every mandatory QFP input."""
+        required = (
+            "input_rem_p0.obj",
+            "input_rem_p0.patch",
+            "input_rem_p0.corners",
+        )
+        return all(
+            os.path.isfile(os.path.join(workdir, name))
+            and os.path.getsize(os.path.join(workdir, name)) > 0
+            for name in required
+        )
+
+    def _commit_step1_cache(self):
+        """Publish a completed QuadWild result to the bounded LRU cache."""
+        if not self._step1_cache_valid(self.workdir):
+            return False
+        while len(_STEP1_CACHE) >= _STEP1_CACHE_MAX:
+            evicted = _STEP1_CACHE.pop(next(iter(_STEP1_CACHE)))
+            shutil.rmtree(evicted, ignore_errors=True)
+        _STEP1_CACHE[self._cache_key] = self.workdir
+        self._cache_committed = True
+        return True
+
+    def _discard_uncached_workdir(self):
+        """Remove a private workdir that never became a valid cache entry."""
+        if (getattr(self, "_workdir_owned", False)
+                and not getattr(self, "_cache_committed", False)):
+            shutil.rmtree(self.workdir, ignore_errors=True)
+            self._workdir_owned = False
+
     def _start_quadwild(self):
         self._mark("engine_quadwild")
         self._phase = "QUADWILD"
@@ -1354,22 +1386,44 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         digest.update(co.tobytes())
         digest.update(tris.tobytes())
         digest.update(prep_content.encode())
+        # Cached patch files are build-specific. Keep outputs from a custom
+        # or updated engine isolated even when the mesh/settings are identical.
+        for name in (BIN_QUADWILD + EXE, BIN_QFP + EXE):
+            exe_path = os.path.join(self.bin_dir, name)
+            stat = os.stat(exe_path)
+            digest.update(os.path.realpath(exe_path).encode())
+            digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
         digest.update(f"{edge_flags}|{settings.material_guides}".encode())
         n_e = len(export_mesh.edges)
         for flag in ("use_edge_sharp", "use_seam"):
             arr = np.empty(n_e, dtype=bool)
             export_mesh.edges.foreach_get(flag, arr)
             digest.update(arr.tobytes())
+        if settings.material_guides:
+            # Material boundaries influence input.sharp and therefore tracing.
+            # Hash both slot count and per-face assignments so editing
+            # materials cannot reuse a stale field-cache entry.
+            digest.update(str(len(export_mesh.materials)).encode())
+            mat_idx = np.empty(len(export_mesh.polygons), dtype=np.int64)
+            export_mesh.polygons.foreach_get("material_index", mat_idx)
+            digest.update(mat_idx.tobytes())
         key = digest.hexdigest()
 
         cached = _STEP1_CACHE.get(key)
+        if cached and not self._step1_cache_valid(cached):
+            _STEP1_CACHE.pop(key, None)
+            shutil.rmtree(cached, ignore_errors=True)
+            cached = None
+        self._cache_key = key
+        self._cache_committed = False
+        self._workdir_owned = False
         self._t0 = time.time()
-        if cached and os.path.isfile(
-                os.path.join(cached, "input_rem_p0.obj")):
+        if cached:
             _STEP1_CACHE[key] = _STEP1_CACHE.pop(key)  # LRU refresh
             bpy.data.meshes.remove(export_mesh)
             self.workdir = cached
             self._set_workdir_paths()
+            self._cache_committed = True
             self.log_handle = open(self.log_path, "a")
             self.log_offset = os.path.getsize(self.log_path)
             self.progress = QFP_BASE - 2
@@ -1381,6 +1435,7 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                 return {"CANCELLED"}
         else:
             self.workdir = tempfile.mkdtemp(prefix="requad_")
+            self._workdir_owned = True
             self._set_workdir_paths()
             self._mark("write_obj")
             self._write_obj(co, tris)
@@ -1396,14 +1451,11 @@ class REQUAD_OT_remesh(bpy.types.Operator):
             with open(self.prep_config, "w") as f:
                 f.write(prep_content)
             self.log_handle = open(self.log_path, "w")
-            while len(_STEP1_CACHE) >= _STEP1_CACHE_MAX:
-                evicted = _STEP1_CACHE.pop(next(iter(_STEP1_CACHE)))
-                shutil.rmtree(evicted, ignore_errors=True)
-            _STEP1_CACHE[key] = self.workdir
             try:
                 self._start_quadwild()
             except OSError as exc:
                 self.log_handle.close()
+                self._discard_uncached_workdir()
                 self.report({"ERROR"}, f"Engine launch failed: {exc}")
                 return {"CANCELLED"}
 
@@ -1418,22 +1470,33 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _run_blocking(self, context):
-        if self._phase == "QUADWILD":
-            if self._proc.wait() != 0:
-                return self._cancel(
-                    context, f"Engine failed in {self._phase} — see {self.log_path}")
-            if not os.path.isfile(self.patches_obj):
-                return self._cancel(context, f"No patch output — see {self.log_path}")
-            self._start_qfp()
-        while True:
-            if self._proc.wait() != 0:
-                return self._cancel(
-                    context, f"Engine failed in {self._phase} — see {self.log_path}")
-            if not self._needs_requantize(context):
-                break
-            self._start_qfp()
-        self._teardown(context)
-        return self._finish(context)
+        try:
+            if self._phase == "QUADWILD":
+                if self._proc.wait() != 0:
+                    return self._cancel(
+                        context,
+                        f"Engine failed in {self._phase} — see {self.log_path}")
+                if not self._commit_step1_cache():
+                    return self._cancel(
+                        context, f"Incomplete patch output — see {self.log_path}")
+                self._start_qfp()
+            while True:
+                if self._proc.wait() != 0:
+                    return self._cancel(
+                        context,
+                        f"Engine failed in {self._phase} — see {self.log_path}")
+                if not self._needs_requantize(context):
+                    break
+                self._start_qfp()
+            self._teardown(context)
+            return self._finish(context)
+        except Exception as exc:  # noqa: BLE001 — batch must fail cleanly too
+            import traceback
+            traceback.print_exc()
+            return self._cancel(
+                context,
+                f"ReQuad internal error: {str(exc)[:120]} — details in the "
+                f"system console, engine log: {self.log_path}")
 
     def modal(self, context, event):
         if event.type == "ESC":
@@ -1467,9 +1530,10 @@ class REQUAD_OT_remesh(bpy.types.Operator):
                     f"Engine failed in {self._phase} — see log: {self.log_path}")
 
             if self._phase == "QUADWILD":
-                if not os.path.isfile(self.patches_obj):
+                if not self._commit_step1_cache():
                     return self._cancel(
-                        context, f"No patch output — see log: {self.log_path}")
+                        context,
+                        f"Incomplete patch output — see log: {self.log_path}")
                 self._start_qfp()
                 return {"PASS_THROUGH"}
 
@@ -1491,9 +1555,15 @@ class REQUAD_OT_remesh(bpy.types.Operator):
         try:
             if self._proc and self._proc.poll() is None:
                 self._proc.terminate()
-        except OSError:
+                try:
+                    self._proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    self._proc.wait(timeout=2.0)
+        except (OSError, subprocess.TimeoutExpired):
             pass
         self._teardown(context)
+        self._discard_uncached_workdir()
         self.report({"WARNING"}, message)
         return {"CANCELLED"}
 
@@ -1544,4 +1614,3 @@ class REQUAD_OT_set_count(bpy.types.Operator):
         else:
             s.target_count = max(int(quads_equiv * self.factor), 100)
         return {"FINISHED"}
-

@@ -122,17 +122,47 @@ jobs:
 
       - name: Build extension (one zip per platform)
         run: |
-          # platforms in the manifest must match the engine folders we ship;
-          # the extension builder does not create the output directory itself
+          # --split-platforms filters platform-specific wheels, not arbitrary
+          # engine folders. Build from an isolated staging tree per target so
+          # each zip contains exactly one native engine.
           mkdir -p dist
-          blender --command extension build --split-platforms \
-                  --source-dir . --output-dir dist
+          for tag in macos-arm64 linux-x64 windows-x64; do
+            stage="$RUNNER_TEMP/requad-$tag"
+            mkdir -p "$stage"
+            git archive HEAD | tar -x -C "$stage"
+            mkdir -p "$stage/engine/$tag"
+            cp "engine/$tag/"* "$stage/engine/$tag/"
+            chmod +x "$stage/engine/$tag/"* || true
+            sed -i \
+              "s/^platforms = .*/platforms = [\"$tag\"]/" \
+              "$stage/blender_manifest.toml"
+            blender --command extension build --split-platforms \
+                    --source-dir "$stage" --output-dir dist
+          done
           ls -lh dist/
 
       - name: Validate extension zips
         run: |
           for z in dist/*.zip; do
             blender --command extension validate "$z"
+            case "$z" in
+              *-linux_x64.zip) tag=linux-x64 ;;
+              *-macos_arm64.zip) tag=macos-arm64 ;;
+              *-windows_x64.zip) tag=windows-x64 ;;
+              *) echo "::error::unknown platform archive: $z"; exit 1 ;;
+            esac
+            if ! unzip -Z1 "$z" | grep -q "^engine/$tag/quadwild"; then
+              echo "::error::$z has no engine for $tag"
+              exit 1
+            fi
+            unexpected=$(unzip -Z1 "$z" \
+              | grep -E '^engine/(macos-arm64|linux-x64|windows-x64)/' \
+              | grep -v "^engine/$tag/" || true)
+            if [ -n "$unexpected" ]; then
+              echo "::error::$z contains engines for other platforms"
+              echo "$unexpected"
+              exit 1
+            fi
           done
 
       - uses: actions/upload-artifact@v4

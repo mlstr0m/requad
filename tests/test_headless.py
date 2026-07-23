@@ -424,6 +424,11 @@ def main():
     check("seam guide traced", on_ring >= 21, f"({on_ring}/32 ring samples)")
 
     # material boundaries as guides: the frontier must be traced like a seam
+    from bl_ext.user_default.requad.common import (
+        _STEP1_CACHE,
+        clear_step1_cache,
+    )
+    clear_step1_cache()
     bpy.ops.wm.read_homefile(use_empty=True)
     bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24)
     ob = bpy.context.active_object
@@ -452,6 +457,47 @@ def main():
     # failure mode this guards against scores near zero, not near 20
     check("material boundary guide", on_ring >= 21,
           f"({on_ring}/32 boundary samples traced)")
+
+    # Changing only face-material assignments must invalidate step 1. The
+    # geometry and edge flags stay identical, so this catches an incomplete
+    # cache digest deterministically without relying on tracer topology.
+    cached_before = set(_STEP1_CACHE)
+    for p in ob.data.polygons:
+        p.material_index = 1 if p.center.x > 0 else 0
+    bpy.ops.object.select_all(action="DESELECT")
+    ob.hide_set(False)
+    ob.select_set(True)
+    bpy.context.view_layer.objects.active = ob
+    result = bpy.ops.requad.remesh()
+    new_cache_keys = set(_STEP1_CACHE) - cached_before
+    check("material edit invalidates field cache",
+          result == {"FINISHED"} and len(new_cache_keys) == 1,
+          f"(new cache entries={len(new_cache_keys)})")
+
+    # Batch mode must convert unexpected post-processing exceptions into a
+    # clean cancellation, just like the interactive modal path.
+    from bl_ext.user_default.requad.operator import REQUAD_OT_remesh
+    finish_original = REQUAD_OT_remesh._finish
+
+    def fail_finish(self, context):
+        raise RuntimeError("intentional headless guard probe")
+
+    REQUAD_OT_remesh._finish = fail_finish
+    raised = None
+    guarded_result = None
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        ob.hide_set(False)
+        ob.select_set(True)
+        bpy.context.view_layer.objects.active = ob
+        guarded_result = bpy.ops.requad.remesh()
+    except Exception as exc:  # noqa: BLE001 — the test asserts this stays empty
+        raised = exc
+    finally:
+        REQUAD_OT_remesh._finish = finish_original
+    check("headless internal error cancels cleanly",
+          raised is None and guarded_result == {"CANCELLED"},
+          f"(result={guarded_result}, exception={raised})")
     bpy.context.scene.requad.material_guides = False
 
     # transfer UVs: result must receive a usable UV layer
