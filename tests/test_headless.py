@@ -537,7 +537,9 @@ def main():
     bpy.context.scene.requad.adaptive_count = False
     bpy.context.scene.requad.adaptive_size = 50.0
 
-    # step-1 cache: re-running the same object must skip field+tracing
+    # step-1 cache: re-running the same object must skip field+tracing.
+    # Assert the skipped engine phase directly; wall-clock ratios are too
+    # sensitive to runner scheduling and filesystem performance.
     import time as _time
     fresh_suzanne()
     bpy.context.scene.requad.preset = "ORGANIC"
@@ -548,13 +550,25 @@ def main():
     src = bpy.data.objects["Suzanne"]
     bpy.context.view_layer.objects.active = src
     src.select_set(True)
-    t0 = _time.time()
-    bpy.ops.requad.remesh()
-    t_warm = _time.time() - t0
+    quadwild_starts = []
+    start_quadwild_original = REQUAD_OT_remesh._start_quadwild
+
+    def record_quadwild_start(self):
+        quadwild_starts.append(True)
+        return start_quadwild_original(self)
+
+    REQUAD_OT_remesh._start_quadwild = record_quadwild_start
+    try:
+        t0 = _time.time()
+        warm_result = bpy.ops.requad.remesh()
+        t_warm = _time.time() - t0
+    finally:
+        REQUAD_OT_remesh._start_quadwild = start_quadwild_original
     got = len(sorted((o for o in bpy.context.scene.objects
                       if "_requad" in o.name),
                      key=lambda o: o.name)[-1].data.polygons)
-    check("step-1 cache", t_warm < t_cold * 0.6 and got > 3000,
+    check("step-1 cache",
+          warm_result == {"FINISHED"} and not quadwild_starts and got > 3000,
           f"(cold {t_cold:.1f}s -> warm {t_warm:.1f}s, {got} quads)")
 
     # relax & project: quad corner angles must improve measurably
