@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.3 — 2026-07-24
 
 - **Field-cache correctness**: material assignments and engine identity now
   participate in cache invalidation; incomplete QuadWild outputs are never
@@ -10,6 +10,9 @@
 - **Lean platform packages**: each split extension archive contains only its
   target platform's native engine, with a CI assertion preventing regressions.
 - Cached temporary work directories are removed when the extension unloads.
+- **Blender Extensions compliance**: preferences use the extension package
+  identifier and bundled engines are materialized in Blender's dedicated
+  per-user extension storage, so read-only System repositories are supported.
 
 ## 0.11.2 — 2026-07-20
 

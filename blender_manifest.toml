@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "requad"
-version = "0.11.2"
+version = "0.11.3"
 name = "ReQuad"
 tagline = "Free auto-retopology powered by QuadWild bi-MDF"
 maintainer = "Aurélien <aurl.desert@gmail.com>"
@@ -27,6 +27,7 @@ files = "Write temp mesh files and run the bundled remeshing engine"
 [build]
 paths_exclude_pattern = [
   "__pycache__/",
+  "/.gitignore",
   "/.git/",
   "/.github/",
   "/tests/",

@@ -2,8 +2,10 @@
 
 The bundled engine binaries (`engine/<platform>/`) are built from
 [cgg-bern/quadwild-bimdf](https://github.com/cgg-bern/quadwild-bimdf)
-(GPL-3.0), with the build patches in `patches/`. That project itself
-bundles:
+at commit `cbda68e5deddf9d0e24c24382852f37a6eb2a630` (GPL-3.0), with the
+build patches and reproducible CI recipe published in the
+[ReQuad source repository](https://github.com/mlstr0m/requad). That project
+itself bundles:
 
 | Component | License | Role |
 |---|---|---|
@@ -15,9 +17,21 @@ bundles:
 | [CoMISo](https://www.graphics.rwth-aachen.de/software/comiso/) | GPL-3.0 | Constrained mixed-integer solver |
 | [LEMON](https://lemon.cs.elte.hu/) | Boost-1.0 | Graph algorithms (flow solver) |
 | [Eigen](https://eigen.tuxfamily.org/) | MPL-2.0 | Linear algebra |
+| [nlohmann/json](https://github.com/nlohmann/json) | MIT | JSON parsing |
+| [libTimekeeper](https://github.com/cgg-bern/libTimekeeper) | MIT | Solver timing |
+| [GLEW](https://github.com/nigels-com/glew) | BSD-3-Clause / MIT | OpenGL loading |
 | xfield_tracer | GPL-3.0 | Cross-field tracing |
 
 The combined work is distributed under **GPL-3.0-or-later**.
+The complete GPL text is included in `LICENSE`; the notices required by
+permissive dependencies are reproduced in `THIRD_PARTY_LICENSES.md`.
+
+## Corresponding source
+
+The preferred source form for every bundled executable is available without
+charge from the links above. The exact engine revision, ReQuad patches, build
+flags, and three-platform build procedure are recorded in
+`.github/workflows/build-engine.yml` in the ReQuad source repository.
 
 ## Papers
 

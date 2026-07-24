@@ -33,7 +33,7 @@ def _engine_dir_changed(self, context):
     _ENGINE_CACHE.clear()
 
 class ReQuadPreferences(bpy.types.AddonPreferences):
-    bl_idname = __name__
+    bl_idname = __package__
 
     custom_engine_dir: StringProperty(
         name="Custom Engine Folder",
@@ -192,7 +192,7 @@ class REQUAD_PT_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         settings = context.scene.requad
-        prefs = context.preferences.addons[__name__].preferences
+        prefs = context.preferences.addons[__package__].preferences
 
         col = layout.column()
         row = col.row(align=True)

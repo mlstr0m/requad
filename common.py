@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Shared constants, engine resolution and target helpers."""
 
+import filecmp
 import os
 import platform
 import shutil
@@ -135,16 +136,29 @@ def resolve_engine(prefs):
         candidate = (os.path.join(root, "build", "Build", "bin"), root)
     else:
         root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine")
-        candidate = (os.path.join(root, _platform_tag()), root)
+        source_bin_dir = os.path.join(root, _platform_tag())
+        user_root = bpy.utils.extension_path_user(__package__, create=True)
+        bin_dir = os.path.join(user_root, "engine", _platform_tag())
+        os.makedirs(bin_dir, exist_ok=True)
+        for name in (BIN_QUADWILD + EXE, BIN_QFP + EXE):
+            source = os.path.join(source_bin_dir, name)
+            target = os.path.join(bin_dir, name)
+            if not os.path.isfile(source):
+                return None
+            if not os.path.isfile(target) or not filecmp.cmp(
+                    source, target, shallow=False):
+                shutil.copy2(source, target)
+            if os.name == "posix":
+                os.chmod(target, 0o755)
+        candidate = (bin_dir, root)
 
     bin_dir, workdir = candidate
     for name in (BIN_QUADWILD + EXE, BIN_QFP + EXE):
         exe = os.path.join(bin_dir, name)
         if not os.path.isfile(exe):
             return None
-        # Zip extraction (extension install) may drop the executable bit.
         if os.name == "posix" and not os.access(exe, os.X_OK):
-            os.chmod(exe, 0o755)
+            return None
     if not os.path.isdir(os.path.join(workdir, "config")):
         return None
     _ENGINE_CACHE[custom] = candidate
