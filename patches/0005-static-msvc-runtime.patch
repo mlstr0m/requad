@@ -1,0 +1,19 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7ee41f3..032484e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,6 +1,14 @@
+ cmake_minimum_required (VERSION 3.9)
+ cmake_policy(SET CMP0069 NEW) # honor INTERPROCEDURAL_OPTIMIZATION
+ 
++# Honor CMAKE_MSVC_RUNTIME_LIBRARY.  This policy must be selected before
++# project() initializes the compiler ABI, otherwise CMake silently falls
++# back to the DLL runtime and the distributed executables require a
++# separately installed Visual C++ Redistributable.
++if(POLICY CMP0091)
++    cmake_policy(SET CMP0091 NEW)
++endif()
++
+ project (Quadwild
+     VERSION 0.0.2
+     LANGUAGES C CXX # OpenMesh cmake does not work without C enabled

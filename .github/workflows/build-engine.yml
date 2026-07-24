@@ -52,6 +52,7 @@ jobs:
           cd engine-src
           cmake . -B build -DSATSUMA_ENABLE_BLOSSOM5=0 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+                -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded \
                 -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" \
                 -DCMAKE_C_FLAGS="${{ matrix.cflags }}"
           # --config is required for MSVC's multi-config generator (without
@@ -77,6 +78,28 @@ jobs:
             exit 1
           fi
           ls out/${{ matrix.tag }}/
+
+      - name: Verify Windows runtime is self-contained
+        if: matrix.tag == 'windows-x64'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) {
+            throw "Visual Studio C++ tools not found"
+          }
+          $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
+          Get-ChildItem "out\windows-x64\*.exe" | ForEach-Object {
+            $command = "`"$vcvars`" >nul && dumpbin /dependents `"$($_.FullName)`""
+            $dependencies = cmd /d /s /c $command
+            $dependencies | Write-Host
+            if ($LASTEXITCODE -ne 0) {
+              throw "dumpbin failed for $($_.Name)"
+            }
+            if ($dependencies -match '(?i)(MSVCP|VCRUNTIME)\d+.*\.dll') {
+              throw "$($_.Name) depends on a separately installed MSVC runtime"
+            }
+          }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -202,3 +225,57 @@ jobs:
             grep -q "^0 failure(s)" /tmp/out.log || fail=1
           done
           exit $fail
+
+  test-windows:
+    needs: extension
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: requad-extension
+          path: dist
+
+      - name: Install Blender
+        shell: pwsh
+        run: |
+          $series = $env:BLENDER_VERSION.Substring(0, 3)
+          $url = "https://download.blender.org/release/Blender$series/blender-$env:BLENDER_VERSION-windows-x64.zip"
+          $archive = Join-Path $env:RUNNER_TEMP "blender.zip"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $env:RUNNER_TEMP
+          $blender = Get-ChildItem $env:RUNNER_TEMP -Filter blender.exe -Recurse |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $blender) {
+            throw "Blender executable not found"
+          }
+          "BLENDER_BIN=$blender" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Run test suites against the built Windows zip
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem "dist\requad-*-windows_x64.zip" |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $zip) {
+            throw "Windows extension archive not found"
+          }
+          $failed = $false
+          foreach ($test in @(
+            "tests\test_headless.py",
+            "tests\test_robustness.py",
+            "tests\test_beta.py"
+          )) {
+            Write-Host "== $test"
+            $profile = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileNameWithoutExtension($test))
+            $env:BLENDER_USER_RESOURCES = $profile
+            $env:REQUAD_ZIP = $zip
+            $output = & $env:BLENDER_BIN --background --factory-startup --offline-mode --python $test 2>&1
+            $output | Write-Host
+            if ($LASTEXITCODE -ne 0 -or -not ($output -match '^0 failure\(s\)$')) {
+              $failed = $true
+            }
+          }
+          if ($failed) {
+            throw "One or more Windows ReQuad suites failed"
+          }

@@ -15,6 +15,9 @@ itself bundles:
 | [libigl](https://github.com/libigl/libigl) | MPL-2.0 | Geometry processing |
 | [OpenMesh](https://www.graphics.rwth-aachen.de/software/openmesh/) | BSD-3-Clause | Halfedge data structures |
 | [CoMISo](https://www.graphics.rwth-aachen.de/software/comiso/) | GPL-3.0 | Constrained mixed-integer solver |
+| [GMM++ 5.4.2](https://getfem.org/gmm/) | LGPL-3.0-or-later WITH GCC-exception-3.1 | Sparse matrix templates used by CoMISo |
+| [lp_solve 5.5.2.11](https://lpsolve.sourceforge.net/5.5/) | LGPL-2.1-or-later | Linear and mixed-integer solver |
+| COLAMD 2.1 | Permissive notice | Sparse matrix column ordering inside lp_solve |
 | [LEMON](https://lemon.cs.elte.hu/) | Boost-1.0 | Graph algorithms (flow solver) |
 | [Eigen](https://eigen.tuxfamily.org/) | MPL-2.0 | Linear algebra |
 | [nlohmann/json](https://github.com/nlohmann/json) | MIT | JSON parsing |
@@ -23,15 +26,18 @@ itself bundles:
 | xfield_tracer | GPL-3.0 | Cross-field tracing |
 
 The combined work is distributed under **GPL-3.0-or-later**.
-The complete GPL text is included in `LICENSE`; the notices required by
-permissive dependencies are reproduced in `THIRD_PARTY_LICENSES.md`.
+The complete GPL text is included in `LICENSE`; the notices and license
+references required by LGPL and permissive dependencies are reproduced in
+`THIRD_PARTY_LICENSES.md`.
 
 ## Corresponding source
 
 The preferred source form for every bundled executable is available without
-charge from the links above. The exact engine revision, ReQuad patches, build
-flags, and three-platform build procedure are recorded in
-`.github/workflows/build-engine.yml` in the ReQuad source repository.
+charge from the links above. GMM++ 5.4.2 is fetched by the pinned SHA-224 in
+the engine build. lp_solve 5.5.2.11 and COLAMD 2.1 are vendored in that exact
+engine revision. The exact engine revision, ReQuad patches, build flags, and
+three-platform build procedure are recorded in `.github/workflows/build-engine.yml`
+in the ReQuad source repository.
 
 ## Papers
 

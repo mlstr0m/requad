@@ -13,6 +13,10 @@
 - **Blender Extensions compliance**: preferences use the extension package
   identifier and bundled engines are materialized in Blender's dedicated
   per-user extension storage, so read-only System repositories are supported.
+- **Redistribution compliance**: document the GMM++, lp_solve, and COLAMD
+  components linked into the native engine and retain their upstream notices.
+- Windows engine builds use the static MSVC runtime and are exercised by the
+  full Blender test suite on a clean Windows CI runner.
 
 ## 0.11.2 — 2026-07-20
 
